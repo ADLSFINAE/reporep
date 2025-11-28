@@ -2,21 +2,28 @@
 #include <QApplication>
 #include <QRandomGenerator>
 #include <QDebug>
+#include <QGroupBox>
+#include <QSpinBox>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , mapWidget(new QQuickWidget(this))
-    , markerCounter(0)
+    , monitoringTimer(new QTimer(this))
+    , measurementCounter(0)
+    , isMonitoring(false)
 {
     setupUI();
     setupMap();
 
-    setWindowTitle("Мониторинг зашумленности радиоэфира - Оффлайн Карта");
-    setMinimumSize(1024, 768);
+    setWindowTitle("Мониторинг зашумленности радиоэфира");
+    setMinimumSize(1200, 800);
 }
 
 MainWindow::~MainWindow()
 {
+    if (monitoringTimer) {
+        monitoringTimer->stop();
+    }
 }
 
 void MainWindow::setupUI()
@@ -26,81 +33,143 @@ void MainWindow::setupUI()
     setCentralWidget(centralWidget);
 
     // Основной layout
-    QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
+    QHBoxLayout *mainLayout = new QHBoxLayout(centralWidget);
 
-    // Панель управления
-    QHBoxLayout *controlLayout = new QHBoxLayout();
+    // Левая панель с управлением
+    QWidget *controlPanel = new QWidget(this);
+    controlPanel->setMaximumWidth(300);
+    QVBoxLayout *controlLayout = new QVBoxLayout(controlPanel);
+
+    // Группа управления картой
+    QGroupBox *mapGroup = new QGroupBox("Управление картой", this);
+    QVBoxLayout *mapLayout = new QVBoxLayout(mapGroup);
 
     // Координаты
+    QHBoxLayout *coordsLayout = new QHBoxLayout();
     QLabel *latLabel = new QLabel("Широта:", this);
     latEdit = new QLineEdit(this);
     latEdit->setText("55.7558");
-    latEdit->setMaximumWidth(100);
 
     QLabel *lngLabel = new QLabel("Долгота:", this);
     lngEdit = new QLineEdit(this);
     lngEdit->setText("37.6173");
-    lngEdit->setMaximumWidth(100);
 
     QLabel *zoomLabel = new QLabel("Масштаб:", this);
     zoomEdit = new QLineEdit(this);
     zoomEdit->setText("10");
-    zoomEdit->setMaximumWidth(50);
 
-    // Кнопки
+    coordsLayout->addWidget(latLabel);
+    coordsLayout->addWidget(latEdit);
+    coordsLayout->addWidget(lngLabel);
+    coordsLayout->addWidget(lngEdit);
+    coordsLayout->addWidget(zoomLabel);
+    coordsLayout->addWidget(zoomEdit);
+
+    // Кнопки управления картой
+    QHBoxLayout *mapButtonsLayout = new QHBoxLayout();
     flyToButton = new QPushButton("Перелететь", this);
-    addMarkerButton = new QPushButton("Добавить маркер", this);
-    clearMarkersButton = new QPushButton("Очистить маркеры", this);
     zoomInButton = new QPushButton("+", this);
     zoomOutButton = new QPushButton("-", this);
 
     zoomInButton->setMaximumWidth(30);
     zoomOutButton->setMaximumWidth(30);
 
+    mapButtonsLayout->addWidget(flyToButton);
+    mapButtonsLayout->addWidget(zoomInButton);
+    mapButtonsLayout->addWidget(zoomOutButton);
+
     // Слайдер масштаба
     zoomSlider = new QSlider(Qt::Horizontal, this);
     zoomSlider->setRange(1, 20);
     zoomSlider->setValue(10);
-    zoomSlider->setMaximumWidth(150);
 
     // Выбор типа карты
+    QHBoxLayout *mapTypeLayout = new QHBoxLayout();
     QLabel *mapTypeLabel = new QLabel("Тип карты:", this);
     mapTypeCombo = new QComboBox(this);
     mapTypeCombo->addItem("Улицы");
     mapTypeCombo->addItem("Спутник");
     mapTypeCombo->addItem("Гибрид");
     mapTypeCombo->addItem("Террейн");
-    mapTypeCombo->setMaximumWidth(120);
 
-    // Компоновка элементов управления
-    controlLayout->addWidget(latLabel);
-    controlLayout->addWidget(latEdit);
-    controlLayout->addWidget(lngLabel);
-    controlLayout->addWidget(lngEdit);
-    controlLayout->addWidget(zoomLabel);
-    controlLayout->addWidget(zoomEdit);
-    controlLayout->addWidget(flyToButton);
-    controlLayout->addWidget(addMarkerButton);
-    controlLayout->addWidget(clearMarkersButton);
-    controlLayout->addWidget(zoomInButton);
-    controlLayout->addWidget(zoomOutButton);
-    controlLayout->addWidget(zoomSlider);
-    controlLayout->addWidget(mapTypeLabel);
-    controlLayout->addWidget(mapTypeCombo);
+    mapTypeLayout->addWidget(mapTypeLabel);
+    mapTypeLayout->addWidget(mapTypeCombo);
+
+    mapLayout->addLayout(coordsLayout);
+    mapLayout->addLayout(mapButtonsLayout);
+    mapLayout->addWidget(zoomSlider);
+    mapLayout->addLayout(mapTypeLayout);
+
+    // Группа мониторинга
+    QGroupBox *monitorGroup = new QGroupBox("Мониторинг излучения", this);
+    QVBoxLayout *monitorLayout = new QVBoxLayout(monitorGroup);
+
+    // Радиус измерения
+    QHBoxLayout *radiusLayout = new QHBoxLayout();
+    QLabel *radiusLabel = new QLabel("Радиус (км):", this);
+    radiusSpinBox = new QSpinBox(this);
+    radiusSpinBox->setRange(1, 100);
+    radiusSpinBox->setValue(10);
+    radiusSpinBox->setSuffix(" км");
+
+    radiusLayout->addWidget(radiusLabel);
+    radiusLayout->addWidget(radiusSpinBox);
+
+    // Кнопки мониторинга
+    QHBoxLayout *monitorButtonsLayout = new QHBoxLayout();
+    addZoneButton = new QPushButton("Добавить зону", this);
+    startMonitoringButton = new QPushButton("Старт", this);
+    stopMonitoringButton = new QPushButton("Стоп", this);
+    clearButton = new QPushButton("Очистить", this);
+
+    stopMonitoringButton->setEnabled(false);
+
+    monitorButtonsLayout->addWidget(addZoneButton);
+    monitorButtonsLayout->addWidget(startMonitoringButton);
+    monitorButtonsLayout->addWidget(stopMonitoringButton);
+    monitorButtonsLayout->addWidget(clearButton);
+
+    // Отображение данных
+    statusLabel = new QLabel("Статус: Ожидание", this);
+    measurement70cmLabel = new QLabel("70 см: -- дБм", this);
+    measurement2mLabel = new QLabel("2 м: -- дБм", this);
+
+    QFont dataFont;
+    dataFont.setBold(true);
+    measurement70cmLabel->setFont(dataFont);
+    measurement2mLabel->setFont(dataFont);
+
+    monitorLayout->addLayout(radiusLayout);
+    monitorLayout->addLayout(monitorButtonsLayout);
+    monitorLayout->addWidget(statusLabel);
+    monitorLayout->addWidget(measurement70cmLabel);
+    monitorLayout->addWidget(measurement2mLabel);
+
+    // Компоновка левой панели
+    controlLayout->addWidget(mapGroup);
+    controlLayout->addWidget(monitorGroup);
     controlLayout->addStretch();
 
-    mainLayout->addLayout(controlLayout);
+    // Правая часть с картой
+    mainLayout->addWidget(controlPanel);
     mainLayout->addWidget(mapWidget);
 
     // Подключение сигналов
     connect(flyToButton, &QPushButton::clicked, this, &MainWindow::onFlyToClicked);
-    connect(addMarkerButton, &QPushButton::clicked, this, &MainWindow::onAddMarkerClicked);
-    connect(clearMarkersButton, &QPushButton::clicked, this, &MainWindow::clearMarkers);
+    connect(addZoneButton, &QPushButton::clicked, this, &MainWindow::onAddMeasurementZoneClicked);
+    connect(startMonitoringButton, &QPushButton::clicked, this, &MainWindow::onStartMonitoringClicked);
+    connect(stopMonitoringButton, &QPushButton::clicked, this, &MainWindow::onStopMonitoringClicked);
+    connect(clearButton, &QPushButton::clicked, this, &MainWindow::onClearClicked);
     connect(zoomInButton, &QPushButton::clicked, this, &MainWindow::onZoomInClicked);
     connect(zoomOutButton, &QPushButton::clicked, this, &MainWindow::onZoomOutClicked);
     connect(zoomSlider, &QSlider::valueChanged, this, &MainWindow::onZoomSliderChanged);
     connect(mapTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onMapTypeChanged);
+    connect(radiusSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &MainWindow::onRadiusChanged);
+
+    // Таймер для имитации сбора данных
+    connect(monitoringTimer, &QTimer::timeout, this, &MainWindow::simulateDataCollection);
 
     // Статус бар
     statusBar()->showMessage("Инициализация карты...");
@@ -116,46 +185,36 @@ void MainWindow::setupMap()
     connect(mapWidget, &QQuickWidget::statusChanged, [this](QQuickWidget::Status status) {
         if (status == QQuickWidget::Ready) {
             onMapLoaded();
+        } else if (status == QQuickWidget::Error) {
+            qDebug() << "Ошибка загрузки QML";
         }
     });
 }
 
-bool MainWindow::invokeQMLMethod(const QString &method, const QVariant &arg1,
+#include <QQuickItem>
+// Упрощенная функция вызова QML методов через JavaScript
+void MainWindow::callQMLFunction(const QString &function, const QVariant &arg1,
                                 const QVariant &arg2, const QVariant &arg3)
 {
-    if (!mapWidget->rootObject()) {
-        qDebug() << "Root object not available";
-        return false;
+    if (!mapWidget || !mapWidget->rootObject()) {
+        qDebug() << "QML root object not available";
+        return;
     }
 
-    QVariant returnedValue;
-    bool success = false;
-
+    QString jsCode;
     if (arg3.isValid()) {
-        success = QMetaObject::invokeMethod(mapWidget->rootObject(), method.toUtf8(),
-                                           Q_RETURN_ARG(QVariant, returnedValue),
-                                           Q_ARG(QVariant, arg1),
-                                           Q_ARG(QVariant, arg2),
-                                           Q_ARG(QVariant, arg3));
+        jsCode = QString("%1(%2, %3, %4)").arg(function).arg(arg1.toString()).arg(arg2.toString()).arg(arg3.toString());
     } else if (arg2.isValid()) {
-        success = QMetaObject::invokeMethod(mapWidget->rootObject(), method.toUtf8(),
-                                           Q_RETURN_ARG(QVariant, returnedValue),
-                                           Q_ARG(QVariant, arg1),
-                                           Q_ARG(QVariant, arg2));
+        jsCode = QString("%1(%2, %3)").arg(function).arg(arg1.toString()).arg(arg2.toString());
     } else if (arg1.isValid()) {
-        success = QMetaObject::invokeMethod(mapWidget->rootObject(), method.toUtf8(),
-                                           Q_RETURN_ARG(QVariant, returnedValue),
-                                           Q_ARG(QVariant, arg1));
+        jsCode = QString("%1(%2)").arg(function).arg(arg1.toString());
     } else {
-        success = QMetaObject::invokeMethod(mapWidget->rootObject(), method.toUtf8(),
-                                           Q_RETURN_ARG(QVariant, returnedValue));
+        jsCode = QString("%1()").arg(function);
     }
 
-    if (!success) {
-        qDebug() << "Failed to invoke QML method:" << method;
-    }
-
-    return success;
+    // Используем evaluateJavaScript для вызова функций QML
+   // QVariant result = mapWidget->rootObject()->evaluateJavaScript(jsCode);
+   // qDebug() << "Called QML function:" << jsCode << "Result:" << result;
 }
 
 void MainWindow::onMapLoaded()
@@ -172,41 +231,105 @@ void MainWindow::onFlyToClicked()
     int zoom = zoomEdit->text().toInt(&zoomOk);
 
     if (latOk && lngOk && zoomOk) {
-        invokeQMLMethod("setCenter", lat, lng, zoom);
+        callQMLFunction("setCenter", lat, lng, zoom);
         statusBar()->showMessage(QString("Перелет к координатам: %1, %2").arg(lat).arg(lng));
     } else {
         QMessageBox::warning(this, "Ошибка", "Некорректные координаты или масштаб");
     }
 }
 
-void MainWindow::onAddMarkerClicked()
+void MainWindow::onAddMeasurementZoneClicked()
 {
     bool latOk, lngOk;
     double lat = latEdit->text().toDouble(&latOk);
     double lng = lngEdit->text().toDouble(&lngOk);
 
     if (latOk && lngOk) {
-        // Генерация тестового уровня шума
-        double noiseLevel = -85 - (QRandomGenerator::global()->generate() % 20);
-        QString title = QString("Маркер %1: %2 дБм").arg(++markerCounter).arg(noiseLevel, 0, 'f', 1);
-
-        addMarker(lat, lng, title, noiseLevel);
-        statusBar()->showMessage(QString("Добавлен маркер: %1").arg(title));
+        double radius = radiusSpinBox->value();
+        addMeasurementZone(lat, lng, radius);
+        statusBar()->showMessage(QString("Добавлена зона измерения: радиус %1 км").arg(radius));
     } else {
         QMessageBox::warning(this, "Ошибка", "Некорректные координаты");
     }
 }
 
-void MainWindow::addMarker(double lat, double lng, const QString &title, double noiseLevel)
+void MainWindow::addMeasurementZone(double lat, double lng, double radiusKm)
 {
-    invokeQMLMethod("addMarker", lat, lng, title);
+    callQMLFunction("addMeasurementZone", lat, lng, radiusKm);
 }
 
-void MainWindow::clearMarkers()
+void MainWindow::updateRadiationVisualization(double lat, double lng, double noiseLevel70cm, double noiseLevel2m)
 {
-    invokeQMLMethod("clearMarkers");
-    markerCounter = 0;
-    statusBar()->showMessage("Маркеры очищены");
+    //callQMLFunction("updateRadiationData", lat, lng, noiseLevel70cm, noiseLevel2m);
+}
+
+void MainWindow::onStartMonitoringClicked()
+{
+    isMonitoring = true;
+    monitoringTimer->start(2000); // Обновление каждые 2 секунды
+
+    startMonitoringButton->setEnabled(false);
+    stopMonitoringButton->setEnabled(true);
+    statusLabel->setText("Статус: Мониторинг активен");
+    statusBar()->showMessage("Мониторинг излучения запущен");
+}
+
+void MainWindow::onStopMonitoringClicked()
+{
+    isMonitoring = false;
+    monitoringTimer->stop();
+
+    startMonitoringButton->setEnabled(true);
+    stopMonitoringButton->setEnabled(false);
+    statusLabel->setText("Статус: Ожидание");
+    statusBar()->showMessage("Мониторинг излучения остановлен");
+}
+
+void MainWindow::onClearClicked()
+{
+    clearVisualizations();
+}
+
+void MainWindow::simulateDataCollection()
+{
+    if (!isMonitoring) return;
+
+    measurementCounter++;
+
+    // Имитация данных с разных диапазонов
+    double baseNoise70cm = -85 + (QRandomGenerator::global()->generate() % 30) - 15; // -70 до -100 дБм
+    double baseNoise2m = -90 + (QRandomGenerator::global()->generate() % 25) - 12;   // -75 до -102 дБм
+
+    // Добавляем некоторую корреляцию между диапазонами
+    double correlation = (QRandomGenerator::global()->generate() % 20) / 100.0; // 0-0.2
+    baseNoise2m += (baseNoise70cm + 85) * correlation;
+
+    // Обновляем отображение
+    measurement70cmLabel->setText(QString("70 см: %1 дБм").arg(baseNoise70cm, 0, 'f', 1));
+    measurement2mLabel->setText(QString("2 м: %1 дБм").arg(baseNoise2m, 0, 'f', 1));
+
+    // Получаем текущие координаты из полей ввода
+    bool latOk, lngOk;
+    double lat = latEdit->text().toDouble(&latOk);
+    double lng = lngEdit->text().toDouble(&lngOk);
+
+    if (latOk && lngOk) {
+        updateRadiationVisualization(lat, lng, baseNoise70cm, baseNoise2m);
+    }
+
+    statusBar()->showMessage(QString("Измерение #%1: 70см=%2 дБм, 2м=%3 дБм")
+                            .arg(measurementCounter)
+                            .arg(baseNoise70cm, 0, 'f', 1)
+                            .arg(baseNoise2m, 0, 'f', 1));
+}
+
+void MainWindow::clearVisualizations()
+{
+    callQMLFunction("clearAllVisualizations");
+    measurementCounter = 0;
+    measurement70cmLabel->setText("70 см: -- дБм");
+    measurement2mLabel->setText("2 м: -- дБм");
+    statusBar()->showMessage("Визуализации очищены");
 }
 
 void MainWindow::onZoomInClicked()
@@ -228,7 +351,7 @@ void MainWindow::onZoomOutClicked()
 void MainWindow::onZoomSliderChanged(int value)
 {
     zoomEdit->setText(QString::number(value));
-    invokeQMLMethod("setZoom", value);
+    callQMLFunction("setZoom", value);
 }
 
 void MainWindow::onMapTypeChanged(int index)
@@ -242,5 +365,10 @@ void MainWindow::onMapTypeChanged(int index)
         default: mapType = "street";
     }
 
-    invokeQMLMethod("setMapType", mapType);
+    callQMLFunction("setMapType", mapType);
+}
+
+void MainWindow::onRadiusChanged(int value)
+{
+    statusBar()->showMessage(QString("Радиус измерения установлен: %1 км").arg(value));
 }
