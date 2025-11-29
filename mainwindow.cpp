@@ -2,17 +2,124 @@
 #include <QApplication>
 #include <QRandomGenerator>
 #include <QDebug>
+#include <QDateTime>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QPushButton>
+#include <QLineEdit>
+#include <QLabel>
+#include <QSlider>
+#include <QComboBox>
+#include <QStatusBar>
+#include <QMessageBox>
 
+// Реализация SolarSystemDialog
+SolarSystemDialog::SolarSystemDialog(QWidget *parent)
+    : QDialog(parent), solarSystemWidget(new QQuickWidget(this))
+{
+    setWindowTitle("Солнечная система - Влияние на радиоизлучение");
+    setMinimumSize(1200, 800);
+    resize(1200, 800);
+
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->addWidget(solarSystemWidget);
+
+    solarSystemWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
+    solarSystemWidget->setSource(QUrl("qrc:/solarsystem.qml"));
+
+    // Устанавливаем начальную дату - 1 января 2025
+    currentDateTime = QDateTime(QDate(2025, 1, 1), QTime(6, 0));
+
+    // Устанавливаем контекст для доступа к свойствам
+    solarSystemWidget->rootContext()->setContextProperty("solarSystemDialog", this);
+    solarSystemWidget->rootContext()->setContextProperty("mainWindow", qobject_cast<QObject*>(parent));
+}
+
+SolarSystemDialog::~SolarSystemDialog()
+{
+}
+
+void SolarSystemDialog::setDateTime(const QDateTime &dateTime)
+{
+    currentDateTime = dateTime;
+}
+
+void SolarSystemDialog::setCurrentTime(double hour, double days)
+{
+    if (solarSystemWidget->rootObject()) {
+        QMetaObject::invokeMethod(solarSystemWidget->rootObject(), "setCurrentTime",
+                                 Q_ARG(QVariant, hour),
+                                 Q_ARG(QVariant, days));
+    }
+}
+
+QDateTime SolarSystemDialog::getDateTime() const
+{
+    return currentDateTime;
+}
+
+double SolarSystemDialog::getSolarInfluence() const
+{
+    if (solarSystemWidget->rootObject()) {
+        QVariant result;
+        QMetaObject::invokeMethod(solarSystemWidget->rootObject(), "getSolarInfluence",
+                                 Q_RETURN_ARG(QVariant, result));
+        return result.toDouble();
+    }
+    return 1.0;
+}
+
+double SolarSystemDialog::getLunarInfluence() const
+{
+    if (solarSystemWidget->rootObject()) {
+        QVariant result;
+        QMetaObject::invokeMethod(solarSystemWidget->rootObject(), "getLunarInfluence",
+                                 Q_RETURN_ARG(QVariant, result));
+        return result.toDouble();
+    }
+    return 1.0;
+}
+
+double SolarSystemDialog::getPlanetaryInfluence() const
+{
+    if (solarSystemWidget->rootObject()) {
+        QVariant result;
+        QMetaObject::invokeMethod(solarSystemWidget->rootObject(), "getPlanetaryInfluence",
+                                 Q_RETURN_ARG(QVariant, result));
+        return result.toDouble();
+    }
+    return 1.0;
+}
+
+void SolarSystemDialog::onDateTimeChanged()
+{
+    emit dateTimeChanged(currentDateTime);
+}
+
+// Основной конструктор MainWindow
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , mapWidget(new QQuickWidget(this))
+    , solarSystemDialog(new SolarSystemDialog(this))
     , markerCounter(0)
+    , solarInfluence(1.0)
+    , lunarInfluence(1.0)
+    , planetaryInfluence(1.0)
 {
     setupUI();
     setupMap();
 
     setWindowTitle("Мониторинг зашумленности радиоэфира - Оффлайн Карта");
-    setMinimumSize(1024, 768);
+    setMinimumSize(1200, 900);
+    resize(1400, 1000);
+
+    connect(solarSystemDialog, &SolarSystemDialog::dateTimeChanged,
+            this, &MainWindow::onDateTimeChanged);
+
+    // Таймер для постоянной синхронизации времени с solar system
+    QTimer *syncTimer = new QTimer(this);
+    connect(syncTimer, &QTimer::timeout, this, &MainWindow::syncTimeWithSolarSystem);
+    syncTimer->start(100); // Синхронизация каждые 100 мс
 }
 
 MainWindow::~MainWindow()
@@ -35,17 +142,17 @@ void MainWindow::setupUI()
     QLabel *latLabel = new QLabel("Широта:", this);
     latEdit = new QLineEdit(this);
     latEdit->setText("55.7558");
-    latEdit->setMaximumWidth(100);
+    latEdit->setMaximumWidth(120);
 
     QLabel *lngLabel = new QLabel("Долгота:", this);
     lngEdit = new QLineEdit(this);
     lngEdit->setText("37.6173");
-    lngEdit->setMaximumWidth(100);
+    lngEdit->setMaximumWidth(120);
 
     QLabel *zoomLabel = new QLabel("Масштаб:", this);
     zoomEdit = new QLineEdit(this);
     zoomEdit->setText("10");
-    zoomEdit->setMaximumWidth(50);
+    zoomEdit->setMaximumWidth(60);
 
     // Кнопки
     flyToButton = new QPushButton("Перелететь", this);
@@ -53,25 +160,30 @@ void MainWindow::setupUI()
     clearMarkersButton = new QPushButton("Очистить маркеры", this);
     zoomInButton = new QPushButton("+", this);
     zoomOutButton = new QPushButton("-", this);
+    solarSystemButton = new QPushButton("Солнечная система", this);
 
-    zoomInButton->setMaximumWidth(30);
-    zoomOutButton->setMaximumWidth(30);
+    zoomInButton->setMaximumWidth(40);
+    zoomOutButton->setMaximumWidth(40);
+    solarSystemButton->setMaximumWidth(160);
+    flyToButton->setMaximumWidth(100);
+    addMarkerButton->setMaximumWidth(140);
+    clearMarkersButton->setMaximumWidth(140);
 
     // Слайдер масштаба
     zoomSlider = new QSlider(Qt::Horizontal, this);
     zoomSlider->setRange(1, 20);
     zoomSlider->setValue(10);
-    zoomSlider->setMaximumWidth(150);
+    zoomSlider->setMaximumWidth(200);
 
     // Слайдер радиуса анализа
     QLabel *radiusLabel = new QLabel("Радиус (м):", this);
     radiusSlider = new QSlider(Qt::Horizontal, this);
     radiusSlider->setRange(100, 5000);
     radiusSlider->setValue(1000);
-    radiusSlider->setMaximumWidth(150);
+    radiusSlider->setMaximumWidth(200);
 
     QLabel *radiusValueLabel = new QLabel("1000", this);
-    radiusValueLabel->setMaximumWidth(50);
+    radiusValueLabel->setMaximumWidth(60);
 
     // Выбор типа карты
     QLabel *mapTypeLabel = new QLabel("Тип карты:", this);
@@ -80,7 +192,7 @@ void MainWindow::setupUI()
     mapTypeCombo->addItem("Спутник");
     mapTypeCombo->addItem("Гибрид");
     mapTypeCombo->addItem("Террейн");
-    mapTypeCombo->setMaximumWidth(120);
+    mapTypeCombo->setMaximumWidth(140);
 
     // Компоновка элементов управления
     controlLayout->addWidget(latLabel);
@@ -94,6 +206,7 @@ void MainWindow::setupUI()
     controlLayout->addWidget(clearMarkersButton);
     controlLayout->addWidget(zoomInButton);
     controlLayout->addWidget(zoomOutButton);
+    controlLayout->addWidget(solarSystemButton);
     controlLayout->addWidget(zoomSlider);
     controlLayout->addWidget(radiusLabel);
     controlLayout->addWidget(radiusSlider);
@@ -111,6 +224,7 @@ void MainWindow::setupUI()
     connect(clearMarkersButton, &QPushButton::clicked, this, &MainWindow::clearMarkers);
     connect(zoomInButton, &QPushButton::clicked, this, &MainWindow::onZoomInClicked);
     connect(zoomOutButton, &QPushButton::clicked, this, &MainWindow::onZoomOutClicked);
+    connect(solarSystemButton, &QPushButton::clicked, this, &MainWindow::onSolarSystemClicked);
     connect(zoomSlider, &QSlider::valueChanged, this, &MainWindow::onZoomSliderChanged);
     connect(radiusSlider, &QSlider::valueChanged, this, &MainWindow::onAnalysisRadiusChanged);
     connect(radiusSlider, &QSlider::valueChanged, radiusValueLabel, QOverload<int>::of(&QLabel::setNum));
@@ -180,6 +294,9 @@ void MainWindow::onMapLoaded()
 {
     statusBar()->showMessage("Карта успешно загружена");
     qDebug() << "Карта успешно загружена";
+
+    // Синхронизируем время с солнечной системой после загрузки карты
+    syncTimeWithSolarSystem();
 }
 
 void MainWindow::onFlyToClicked()
@@ -204,12 +321,17 @@ void MainWindow::onAddMarkerClicked()
     double lng = lngEdit->text().toDouble(&lngOk);
 
     if (latOk && lngOk) {
-        // Генерация тестового уровня шума
-        double noiseLevel = -85 - (QRandomGenerator::global()->generate() % 20);
+        // Генерация тестового уровня шума с учетом влияния небесных тел
+        double baseNoiseLevel = -85 - (QRandomGenerator::global()->generate() % 20);
+        double totalInfluence = solarInfluence * lunarInfluence * planetaryInfluence;
+        double influencedNoiseLevel = baseNoiseLevel * totalInfluence;
         QString title = QString("Маркер %1").arg(++markerCounter);
 
-        addMarker(lat, lng, title, noiseLevel);
-        statusBar()->showMessage(QString("Добавлен маркер: %1 (%2 дБм)").arg(title).arg(noiseLevel, 0, 'f', 1));
+        addMarker(lat, lng, title, influencedNoiseLevel);
+        statusBar()->showMessage(QString("Добавлен маркер: %1 (%2 дБм, влияние: %3x)")
+                                .arg(title)
+                                .arg(influencedNoiseLevel, 0, 'f', 1)
+                                .arg(totalInfluence, 0, 'f', 2));
     } else {
         QMessageBox::warning(this, "Ошибка", "Некорректные координаты");
     }
@@ -248,6 +370,104 @@ void MainWindow::onZoomOutClicked()
     if (currentZoom > zoomSlider->minimum()) {
         zoomSlider->setValue(currentZoom - 1);
     }
+}
+
+void MainWindow::onSolarSystemClicked()
+{
+    solarSystemDialog->show();
+    solarSystemDialog->raise();
+    solarSystemDialog->activateWindow();
+
+    // Синхронизируем время с основным окном
+    syncTimeWithSolarSystem();
+
+    statusBar()->showMessage("Открыто окно солнечной системы");
+}
+
+void MainWindow::onDateTimeChanged(const QDateTime &dateTime)
+{
+    // Обновляем влияние небесных тел при изменении даты/времени
+    solarInfluence = solarSystemDialog->getSolarInfluence();
+    lunarInfluence = solarSystemDialog->getLunarInfluence();
+    planetaryInfluence = solarSystemDialog->getPlanetaryInfluence();
+
+    updateCelestialInfluence();
+
+    QString influenceText = QString("Обновлено влияние: Солнце: %1x, Луна: %2x, Планеты: %3x, Общее: %4x")
+                            .arg(solarInfluence, 0, 'f', 2)
+                            .arg(lunarInfluence, 0, 'f', 2)
+                            .arg(planetaryInfluence, 0, 'f', 2)
+                            .arg(solarInfluence * lunarInfluence * planetaryInfluence, 0, 'f', 2);
+
+    statusBar()->showMessage(influenceText);
+
+    // Обновляем все маркеры с новым влиянием
+    updateAllMarkersWithInfluence();
+}
+
+void MainWindow::updateCelestialInfluence()
+{
+    // Передаем влияние в QML карту
+    double totalInfluence = solarInfluence * lunarInfluence * planetaryInfluence;
+    invokeQMLMethod("setCelestialInfluence", totalInfluence);
+
+    qDebug() << "Обновлено влияние небесных тел:"
+             << "Солнце:" << solarInfluence
+             << "Луна:" << lunarInfluence
+             << "Планеты:" << planetaryInfluence
+             << "Общее:" << totalInfluence;
+}
+
+void MainWindow::updateAllMarkersWithInfluence()
+{
+    // Если есть маркеры, обновляем анализ области с новым влиянием
+    if (markerCounter > 0) {
+        invokeQMLMethod("updateAnalysisWithInfluence");
+    }
+}
+
+void MainWindow::syncTimeWithSolarSystem()
+{
+    // Синхронизируем только если окно solar system открыто
+    if (solarSystemDialog->isVisible() && mapWidget->rootObject() && solarSystemDialog) {
+        // Получаем текущее время из карты
+        QVariant currentTime;
+        bool success = QMetaObject::invokeMethod(mapWidget->rootObject(), "getCurrentTime",
+                                                Q_RETURN_ARG(QVariant, currentTime));
+
+        QVariant currentDays;
+        bool daysSuccess = QMetaObject::invokeMethod(mapWidget->rootObject(), "getDaysFromStart",
+                                                   Q_RETURN_ARG(QVariant, currentDays));
+
+        if (success && daysSuccess && currentTime.isValid() && currentDays.isValid()) {
+            // Устанавливаем актуальное время в солнечной системе
+            double actualHour = currentTime.toDouble();
+            double actualDays = currentDays.toDouble();
+
+            solarSystemDialog->setCurrentTime(actualHour, actualDays);
+
+            // Обновляем влияние небесных тел
+            solarInfluence = solarSystemDialog->getSolarInfluence();
+            lunarInfluence = solarSystemDialog->getLunarInfluence();
+            planetaryInfluence = solarSystemDialog->getPlanetaryInfluence();
+            updateCelestialInfluence();
+
+            static int syncCounter = 0;
+            if (syncCounter++ % 100 == 0) { // Логируем каждые 10 секунд чтобы не засорять консоль
+                qDebug() << "Синхронизировано время с solar system. Часы:" << actualHour << "Дни:" << actualDays;
+            }
+        }
+    }
+}
+
+void MainWindow::syncSolarSystemTime(double hour, double days)
+{
+    // Этот метод вызывается из QML solar system для запроса синхронизации
+    Q_UNUSED(hour);
+    Q_UNUSED(days);
+
+    // Просто вызываем синхронизацию - solar system запросил обновление
+    syncTimeWithSolarSystem();
 }
 
 void MainWindow::onZoomSliderChanged(int value)

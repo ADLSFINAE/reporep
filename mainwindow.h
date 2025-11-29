@@ -12,10 +12,40 @@
 #include <QComboBox>
 #include <QStatusBar>
 #include <QMessageBox>
+#include <QDialog>
+#include <QDateTime>
+#include <QTimer>
 
 #include <QQuickWidget>
 #include <QQmlContext>
 #include <QQuickItem>
+#include <QDateTime>
+
+class SolarSystemDialog : public QDialog
+{
+    Q_OBJECT
+
+public:
+    explicit SolarSystemDialog(QWidget *parent = nullptr);
+    ~SolarSystemDialog();
+
+    void setDateTime(const QDateTime &dateTime);
+    void setCurrentTime(double hour, double days);
+    QDateTime getDateTime() const;
+    double getSolarInfluence() const;
+    double getLunarInfluence() const;
+    double getPlanetaryInfluence() const;
+
+signals:
+    void dateTimeChanged(const QDateTime &dateTime);
+
+private slots:
+    void onDateTimeChanged();
+
+private:
+    QQuickWidget *solarSystemWidget;
+    QDateTime currentDateTime;
+};
 
 class MainWindow : public QMainWindow
 {
@@ -25,6 +55,9 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+public slots:
+    void syncSolarSystemTime(double hour, double days);
+
 private slots:
     void onZoomInClicked();
     void onZoomOutClicked();
@@ -33,6 +66,9 @@ private slots:
     void onMapTypeChanged(int index);
     void onZoomSliderChanged(int value);
     void onAnalysisRadiusChanged(int value);
+    void onSolarSystemClicked();
+    void onDateTimeChanged(const QDateTime &dateTime);
+    void syncTimeWithSolarSystem();
 
     void onMapLoaded();
 
@@ -43,8 +79,11 @@ private:
     void clearMarkers();
     bool invokeQMLMethod(const QString &method, const QVariant &arg1 = QVariant(),
                         const QVariant &arg2 = QVariant(), const QVariant &arg3 = QVariant());
+    void updateCelestialInfluence();
+    void updateAllMarkersWithInfluence();
 
     QQuickWidget *mapWidget;
+    SolarSystemDialog *solarSystemDialog;
 
     // Элементы управления
     QLineEdit *latEdit;
@@ -55,9 +94,15 @@ private:
     QPushButton *clearMarkersButton;
     QPushButton *zoomInButton;
     QPushButton *zoomOutButton;
+    QPushButton *solarSystemButton;
     QSlider *zoomSlider;
     QSlider *radiusSlider;
     QComboBox *mapTypeCombo;
+
+    // Влияние небесных тел
+    double solarInfluence;
+    double lunarInfluence;
+    double planetaryInfluence;
 
     int markerCounter;
 };

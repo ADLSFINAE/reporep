@@ -6,5 +6,6 @@
         <file>NoiseArea.qml</file>
         <file>NoiseCircle.qml</file>
         <file>JsonData.qml</file>
+        <file>solarsystem.qml</file>
     </qresource>
 </RCC>

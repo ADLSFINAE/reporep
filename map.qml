@@ -6,8 +6,8 @@ import QtQml 2.12
 
 Item {
     visible: true
-    width: 800
-    height: 600
+    width: 1200
+    height: 800
 
     property var markers: []
     property var noiseCircles: []
@@ -16,9 +16,16 @@ Item {
     property real dayNightFactor: 1.0
     property real targetTime: 6.0
     property int timeSpeed: 1
-    property var speedMultipliers: [1, 2, 5, 10, 60]
-    property var speedLabels: ["x1", "x2", "x5", "x10", "x60"]
+    property var speedMultipliers: [1, 2, 5, 10, 60, 2400]
+    property var speedLabels: ["x1", "x2", "x5", "x10", "x60", "x2400"]
     property string configFilePath: "radiation.json"
+
+    // Новые свойства для влияния небесных тел и подсчета дней
+    property double celestialInfluence: 1.0
+    property double totalInfluence: 1.0
+    property date startDate: new Date(2025, 0, 1) // 1 января 2025
+    property real daysFromStart: 0
+    property real totalDays: 0
 
     // Цветовая схема для уровней радиоизлучения
     property var noiseLevels: [
@@ -57,6 +64,10 @@ Item {
     Plugin {
         id: mapPlugin
         name: "osm"
+        PluginParameter {
+            name: "osm.mapping.custom.host"
+            value: "https://tile.openstreetmap.org/"
+        }
     }
 
     Map {
@@ -220,8 +231,8 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.margins: 10
-        width: 260
-        height: 150
+        width: 300
+        height: 200
         color: "#E0FFFFFF"
         opacity: 0.9
         border.width: 1
@@ -230,8 +241,8 @@ Item {
 
         Column {
             anchors.fill: parent
-            anchors.margins: 5
-            spacing: 2
+            anchors.margins: 8
+            spacing: 3
 
             Text {
                 text: "Время суток:"
@@ -242,16 +253,29 @@ Item {
 
             Text {
                 id: timeText
-                text: "6:00 (Утро)"
+                text: "6:00 (Утро) | День: 0"
                 font.pixelSize: 14
                 font.bold: true
                 color: getTimeColor()
             }
 
             Text {
-                text: "Множитель шума: " + dayNightFactor.toFixed(3) + "x"
+                text: "Множитель времени: " + dayNightFactor.toFixed(3) + "x"
                 font.pixelSize: 10
                 color: "black"
+            }
+
+            Text {
+                text: "Влияние небесных тел: " + (celestialInfluence * 100).toFixed(1) + "%"
+                font.pixelSize: 10
+                color: celestialInfluence > 1 ? "#FF4444" : "#44FF44"
+            }
+
+            Text {
+                text: "Общий множитель: " + totalInfluence.toFixed(3) + "x"
+                font.pixelSize: 10
+                color: "purple"
+                font.bold: true
             }
 
             Text {
@@ -281,8 +305,8 @@ Item {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 10
-        width: 200
-        height: 280
+        width: 220
+        height: 300
         color: "#E0FFFFFF"
         opacity: 0.9
         border.width: 1
@@ -291,7 +315,7 @@ Item {
 
         Column {
             anchors.fill: parent
-            anchors.margins: 5
+            anchors.margins: 8
             spacing: 2
 
             Text {
@@ -306,11 +330,11 @@ Item {
 
                 Row {
                     spacing: 5
-                    height: 20
+                    height: 22
 
                     Rectangle {
                         width: 20
-                        height: 15
+                        height: 16
                         color: modelData.color
                         border.width: 1
                         border.color: "gray"
@@ -356,7 +380,6 @@ Item {
         }
     }
 
-    // Остальные функции остаются без изменений...
     function getSpeedIndex() {
         for (var i = 0; i < speedMultipliers.length; i++) {
             if (speedMultipliers[i] === timeSpeed) return i;
@@ -371,6 +394,7 @@ Item {
             case 5: return "orange";
             case 10: return "#FF6600";
             case 60: return "red";
+            case 2400: return "#FF00FF";
             default: return "black";
         }
     }
@@ -420,8 +444,12 @@ Item {
         }
 
         dayNightFactor += (newFactor - dayNightFactor) * 0.02;
+        updateTotalInfluence();
 
-        timeText.text = formatTime(currentTime) + " (" + getTimeOfDay() + ")";
+        // Обновляем подсчет дней
+        updateDaysCounter();
+
+        timeText.text = formatTime(currentTime) + " (" + getTimeOfDay() + ")" + " | День: " + daysFromStart.toFixed(3);
         timeText.color = getTimeColor();
         speedText.text = "Скорость: " + speedLabels[getSpeedIndex()] + " (1 сек = " + timeSpeed + " мин)";
         speedText.color = getSpeedColor();
@@ -432,6 +460,40 @@ Item {
             var lastMarker = markers[markers.length - 1];
             showAreaAnalysis(lastMarker.coordinate.latitude, lastMarker.coordinate.longitude, currentRadius);
         }
+    }
+
+    // Функция для установки влияния небесных тел
+    function setCelestialInfluence(influence) {
+        celestialInfluence = influence;
+        updateTotalInfluence();
+    }
+
+    function updateTotalInfluence() {
+        totalInfluence = dayNightFactor * celestialInfluence;
+        updateCirclesAppearance();
+    }
+
+    // В функции updateDaysCounter() map.qml добавьте:
+    function updateDaysCounter() {
+        // Базовое время: 6:00 утра 1 января 2025
+        var baseHour = 6.0;
+
+        // Разница в часах от базового времени
+        var hoursDiff = currentTime - baseHour;
+
+        // Если время меньше базового, значит прошли сутки
+        if (hoursDiff < 0) {
+            hoursDiff += 24;
+        }
+
+        // Преобразуем разницу в часах в дни (с дробной частью)
+        daysFromStart = hoursDiff / 24;
+        totalDays = daysFromStart;
+
+        // Отладочная информация
+        console.log("Time update - Current:", currentTime.toFixed(3),
+                    "Base:", baseHour, "Diff:", hoursDiff.toFixed(3),
+                    "Days:", daysFromStart.toFixed(3));
     }
 
     // Упрощенная функция обновления внешнего вида кругов
@@ -453,6 +515,9 @@ Item {
                 // Внутренние круги более непрозрачные
                 var circleOpacity = baseOpacity * (1 - i / noiseCircles.length * 0.6);
                 circle.opacity = Math.max(0.1, Math.min(0.8, circleOpacity));
+
+                // Обновляем уровень шума с учетом общего влияния
+                circle.noiseLevel = circle.baseNoiseLevel * totalInfluence;
             }
         }
     }
@@ -491,8 +556,6 @@ Item {
             var circle = noiseCircles[i];
             if (!circle) continue;
 
-            circle.noiseLevel = circle.baseNoiseLevel * dayNightFactor;
-
             var distance = centerCoord.distanceTo(circle.center);
             var circleRadius = circle.radius;
 
@@ -514,7 +577,7 @@ Item {
             console.log("Средний шум: " + average.toFixed(1) + " дБм (" + avgDescription + ")");
             return average;
         } else {
-            return -100 * dayNightFactor;
+            return -100 * totalInfluence;
         }
     }
 
@@ -611,7 +674,9 @@ Item {
         if (zoom !== undefined) map.zoomLevel = zoom;
     }
 
-    function setZoom(zoom) { map.zoomLevel = zoom; }
+    function setZoom(zoom) {
+        map.zoomLevel = zoom;
+    }
 
     function setMapType(type) {
         for (var i = 0; i < map.supportedMapTypes.length; i++) {
@@ -629,7 +694,7 @@ Item {
             var marker = component.createObject(map);
             marker.coordinate = QtPositioning.coordinate(markerData.lat, markerData.lng);
             marker.title = markerData.title;
-            marker.noiseLevel = markerData.noiseLevel * dayNightFactor;
+            marker.noiseLevel = markerData.noiseLevel;
             markers.push(marker);
             map.addMapItem(marker);
             showAreaAnalysis(markerData.lat, markerData.lng, currentRadius);
@@ -654,6 +719,23 @@ Item {
         }
     }
 
+    // Методы для получения времени и дней
+    function getCurrentTime() {
+        return currentTime;
+    }
+
+    function getDaysFromStart() {
+        return daysFromStart;
+    }
+
+    function getTotalTime() {
+        return {
+            currentTime: currentTime,
+            daysFromStart: daysFromStart,
+            totalDays: totalDays
+        };
+    }
+
     Component.onCompleted: {
         console.log("Инициализация с загрузкой из radiation.json...");
         loadConfigurationFromJson();
@@ -665,8 +747,8 @@ Item {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.margins: 10
-        width: 320
-        height: 170
+        width: 350
+        height: 190
         color: "#E0FFFFFF"
         opacity: 0.9
         border.width: 1
@@ -675,8 +757,8 @@ Item {
 
         Column {
             anchors.fill: parent
-            anchors.margins: 5
-            spacing: 3
+            anchors.margins: 8
+            spacing: 4
 
             Text {
                 text: "Управление системой:"
@@ -687,21 +769,21 @@ Item {
 
             // Кнопки управления скоростью
             Row {
-                spacing: 3
+                spacing: 4
                 Repeater {
                     model: speedMultipliers
                     Rectangle {
-                        width: 40
-                        height: 25
+                        width: 45
+                        height: 28
                         color: timeSpeed === modelData ? getSpeedButtonColor(modelData) : "lightgray"
-                        radius: 3
+                        radius: 4
                         border.width: timeSpeed === modelData ? 2 : 1
                         border.color: timeSpeed === modelData ? "darkblue" : "gray"
 
                         Text {
                             anchors.centerIn: parent
                             text: "x" + modelData
-                            font.pixelSize: 10
+                            font.pixelSize: 11
                             font.bold: true
                             color: timeSpeed === modelData ? "white" : "black"
                         }
@@ -716,17 +798,18 @@ Item {
 
             // Кнопки управления временем и конфигурацией
             Row {
-                spacing: 5
+                spacing: 6
                 Rectangle {
-                    width: 80
-                    height: 25
+                    width: 90
+                    height: 28
                     color: realTimeTimer.running ? "lightgreen" : "lightgray"
-                    radius: 3
+                    radius: 4
 
                     Text {
                         anchors.centerIn: parent
                         text: realTimeTimer.running ? "Пауза" : "Старт"
-                        font.pixelSize: 10
+                        font.pixelSize: 11
+                        font.bold: true
                     }
 
                     MouseArea {
@@ -736,15 +819,16 @@ Item {
                 }
 
                 Rectangle {
-                    width: 100
-                    height: 25
+                    width: 110
+                    height: 28
                     color: "lightblue"
-                    radius: 3
+                    radius: 4
 
                     Text {
                         anchors.centerIn: parent
                         text: "+1 час"
-                        font.pixelSize: 10
+                        font.pixelSize: 11
+                        font.bold: true
                     }
 
                     MouseArea {
@@ -754,15 +838,16 @@ Item {
                 }
 
                 Rectangle {
-                    width: 120
-                    height: 25
+                    width: 130
+                    height: 28
                     color: "lightcoral"
-                    radius: 3
+                    radius: 4
 
                     Text {
                         anchors.centerIn: parent
                         text: "Обновить JSON"
-                        font.pixelSize: 9
+                        font.pixelSize: 10
+                        font.bold: true
                     }
 
                     MouseArea {
@@ -774,23 +859,23 @@ Item {
 
             // Информация о системе
             Column {
-                spacing: 1
+                spacing: 2
                 Text {
                     text: "Скорость: " + speedLabels[getSpeedIndex()] + " | Зон: " + noiseCircles.length
-                    font.pixelSize: 9
+                    font.pixelSize: 10
                     color: getSpeedColor()
                     font.bold: true
                 }
 
                 Text {
                     text: "1 секунда = " + timeSpeed + " минут"
-                    font.pixelSize: 8
+                    font.pixelSize: 9
                     color: "darkgray"
                 }
 
                 Text {
                     text: "Конфигурация: radiation.json"
-                    font.pixelSize: 8
+                    font.pixelSize: 9
                     color: "darkgreen"
                 }
             }
@@ -804,6 +889,7 @@ Item {
             case 5: return "orange";
             case 10: return "#FF6600";
             case 60: return "red";
+            case 2400: return "#FF00FF";
             default: return "lightblue";
         }
     }
