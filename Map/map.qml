@@ -18,7 +18,7 @@ Item {
     property int timeSpeed: 1
     property var speedMultipliers: [1, 2, 5, 10, 60, 2400]
     property var speedLabels: ["x1", "x2", "x5", "x10", "x60", "x2400"]
-    property string configFilePath: "radiation.json"
+    property string configFilePath: "qrc:/radiation.json"
 
     // Новые свойства для влияния небесных тел и подсчета дней
     property double celestialInfluence: 1.0
@@ -212,7 +212,7 @@ Item {
 
     // Создание круга из конфигурации
     function createNoiseCircleFromConfig(config) {
-        var component = Qt.createComponent("NoiseCircle.qml");
+        var component = Qt.createComponent("qrc:/Map/Items/NoiseCircle.qml");
         if (component.status === Component.Ready) {
             var circle = component.createObject(map);
             circle.center = QtPositioning.coordinate(config.latitude, config.longitude);
@@ -692,7 +692,7 @@ Item {
     }
 
     function addMarkerWithData(markerData) {
-        var component = Qt.createComponent("Marker.qml");
+        var component = Qt.createComponent("qrc:/Map/Items/Marker.qml");
         if (component.status === Component.Ready) {
             var marker = component.createObject(map);
             marker.coordinate = QtPositioning.coordinate(markerData.lat, markerData.lng);

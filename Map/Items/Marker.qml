@@ -17,6 +17,7 @@ MapQuickItem {
         color: getColor(noiseLevel)
         border.width: 3
         border.color: "white"
+        z: 1000
 
         Text {
             anchors.centerIn: parent

@@ -25,7 +25,7 @@ SolarSystemDialog::SolarSystemDialog(QWidget *parent)
     layout->addWidget(solarSystemWidget);
 
     solarSystemWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
-    solarSystemWidget->setSource(QUrl("qrc:/solarsystem.qml"));
+    solarSystemWidget->setSource(QUrl("qrc:/SettingsWindow/solarsystem.qml"));
 
     // Устанавливаем начальную дату - 1 января 2025
     currentDateTime = QDateTime(QDate(2025, 1, 1), QTime(6, 0));
@@ -236,7 +236,7 @@ void MainWindow::setupMap()
 {
     // Настройка QQuickWidget для отображения карты
     mapWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
-    mapWidget->setSource(QUrl("qrc:/map.qml"));
+    mapWidget->setSource(QUrl("qrc:/Map/map.qml"));
 
     // Установка контекста для доступа к свойствам
     mapWidget->rootContext()->setContextProperty("mainWindow", this);

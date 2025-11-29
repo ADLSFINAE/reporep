@@ -10,3 +10,6 @@ MapCircle {
     border.width: 1
     border.color: Qt.darker(color, 1.2)
 }
+
+
+

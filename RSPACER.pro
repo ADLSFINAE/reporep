@@ -1,4 +1,4 @@
-QT       += core gui location positioning quickwidgets
+QT       += core gui  location positioning quickwidgets
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -21,9 +21,14 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
 
 DISTFILES += \
-    Marker.qml \
-    map.qml
+    Map/Items/Marker.qml \
+    Map/Items/NoiseCircle.qml \
+    Map/JsonWorker/JsonData.qml \
+    Map/map.qml \
+    SettingsWindow/solarsystem.qml \
+    main.qml
 
 RESOURCES += \
-    inform.qrc \
-    resourc.qrc
+    Images.qrc \
+    JsonFiles/circles.qrc \
+    qml.qrc

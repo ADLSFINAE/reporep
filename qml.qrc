@@ -1,0 +1,10 @@
+<RCC>
+    <qresource prefix="/">
+        <file>Map/Items/Marker.qml</file>
+        <file>Map/Items/NoiseCircle.qml</file>
+        <file>Map/JsonWorker/JsonData.qml</file>
+        <file>Map/map.qml</file>
+        <file>SettingsWindow/solarsystem.qml</file>
+        <file>main.qml</file>
+    </qresource>
+</RCC>

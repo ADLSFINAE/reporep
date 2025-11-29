@@ -86,20 +86,25 @@ Item {
             }
         }
 
-        // Солнце в одном из фокусов эллипса
-        Rectangle {
+        // Солнце в одном из фокусов эллипса (PNG изображение)
+        Image {
             id: sun
             width: 70
             height: 70
-            radius: width / 2
-            color: "#FFFF00"
-            border.color: "#FF6600"
-            border.width: 4
+            source: "qrc:/Images/sun.png"
 
             x: earthOrbitCanvas.x + earthOrbitCanvas.width / 2 + earthOrbitFocusDistance - width / 2
             y: earthOrbitCanvas.y + earthOrbitCanvas.height / 2 - height / 2
 
-            // Солнечная корона
+            // Масштабирование изображения
+            fillMode: Image.PreserveAspectFit
+
+            // Сглаживание изображения
+            smooth: true
+            mipmap: true
+            antialiasing: true
+
+            // Свечение вокруг солнца
             Rectangle {
                 anchors.centerIn: parent
                 width: parent.width * 1.5
@@ -109,20 +114,18 @@ Item {
                 border.color: "#FF8800"
                 border.width: 3
                 opacity: 0.6
+
+                // Сглаживание для свечения
+                antialiasing: true
             }
 
-            // Внутреннее свечение
-            Rectangle {
-                anchors.centerIn: parent
-                width: parent.width * 0.7
-                height: parent.height * 0.7
-                radius: width / 2
-                color: "#FFFF88"
-                opacity: 0.8
-            }
+            // Дополнительный эффект сглаживания через слой
+            layer.enabled: true
+            layer.smooth: true
+            layer.textureSize: Qt.size(width * 2, height * 2) // Увеличиваем текстуру для лучшего качества
         }
 
-        // Земля
+        // Земля (PNG изображение)
         Item {
             id: earthContainer
             width: 35
@@ -142,61 +145,47 @@ Item {
                 running: updateTimer.running
             }
 
-            // Земля с текстурой вращения
-            Rectangle {
+            // Земля с PNG текстурой
+            Image {
                 id: earth
                 anchors.centerIn: parent
                 width: 35
                 height: 35
+                source: "qrc:/Images/earth.png"
+                fillMode: Image.PreserveAspectFit
+
+                // Вращение текстуры земли
+                rotation: -parent.rotation // Компенсируем вращение контейнера для реалистичного вида
+
+                // Сглаживание изображения
+                smooth: true
+                mipmap: true
+                antialiasing: true
+
+                // Дополнительный эффект сглаживания через слой
+                layer.enabled: true
+                layer.smooth: true
+                layer.textureSize: Qt.size(width * 2, height * 2) // Увеличиваем текстуру для лучшего качества
+            }
+
+            // Атмосфера
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width * 1.1
+                height: parent.height * 1.1
                 radius: width / 2
                 color: "transparent"
+                border.color: "#88CCFF"
+                border.width: 2
+                opacity: 0.3
 
-                // Континенты (упрощенно)
-                Canvas {
-                    anchors.fill: parent
-                    rotation: -earthContainer.rotation // Компенсируем вращение контейнера
-                    onPaint: {
-                        var ctx = getContext("2d");
-                        ctx.clearRect(0, 0, width, height);
-
-                        // Основной цвет океанов
-                        ctx.fillStyle = "#3366FF";
-                        ctx.beginPath();
-                        ctx.arc(width/2, height/2, width/2, 0, Math.PI * 2);
-                        ctx.fill();
-
-                        // Континенты
-                        ctx.fillStyle = "#22AA22";
-
-                        // Северная Америка/Евразия
-                        ctx.beginPath();
-                        ctx.ellipse(width * 0.3, height * 0.2, width * 0.4, height * 0.3);
-                        ctx.fill();
-
-                        // Южная Америка/Африка
-                        ctx.beginPath();
-                        ctx.ellipse(width * 0.2, height * 0.5, width * 0.3, height * 0.4);
-                        ctx.fill();
-
-                        // Австралия/Антарктида
-                        ctx.beginPath();
-                        ctx.ellipse(width * 0.6, height * 0.7, width * 0.25, height * 0.2);
-                        ctx.fill();
-                    }
-                }
-
-                // Атмосфера
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: parent.width * 1.1
-                    height: parent.height * 1.1
-                    radius: width / 2
-                    color: "transparent"
-                    border.color: "#88CCFF"
-                    border.width: 2
-                    opacity: 0.3
-                }
+                // Сглаживание для атмосферы
+                antialiasing: true
             }
+
+            // Дополнительный эффект сглаживания для всего контейнера земли
+            layer.enabled: true
+            layer.smooth: true
         }
 
         // Панель управления
@@ -211,6 +200,9 @@ Item {
             border.width: 2
             radius: 10
 
+            // Сглаживание для панели управления
+            antialiasing: true
+
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 15
@@ -220,6 +212,9 @@ Item {
                     font.bold: true
                     font.pixelSize: 16
                     color: "white"
+
+                    // Сглаживание текста
+                    renderType: Text.NativeRendering
                 }
 
                 RowLayout {
@@ -230,6 +225,9 @@ Item {
                         color: "#88FF88"
                         font.pixelSize: 12
                         font.italic: true
+
+                        // Сглаживание текста
+                        renderType: Text.NativeRendering
                     }
                 }
 
@@ -242,18 +240,21 @@ Item {
                         text: "Влияние:"
                         color: "white"
                         font.bold: true
+                        renderType: Text.NativeRendering
                     }
 
                     Text {
                         text: "Солнце: " + (solarInfluence * 100).toFixed(1) + "%"
                         color: getInfluenceColor(solarInfluence)
                         font.pixelSize: 11
+                        renderType: Text.NativeRendering
                     }
 
                     Text {
                         text: "Планеты: " + (planetaryInfluence * 100).toFixed(1) + "%"
                         color: getInfluenceColor(planetaryInfluence)
                         font.pixelSize: 11
+                        renderType: Text.NativeRendering
                     }
 
                     Text {
@@ -261,6 +262,7 @@ Item {
                         color: getInfluenceColor(solarInfluence * lunarInfluence * planetaryInfluence)
                         font.pixelSize: 11
                         font.bold: true
+                        renderType: Text.NativeRendering
                     }
                 }
             }
@@ -278,6 +280,9 @@ Item {
             border.width: 2
             radius: 10
 
+            // Сглаживание для информационной панели
+            antialiasing: true
+
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 15
@@ -288,12 +293,14 @@ Item {
                     font.bold: true
                     font.pixelSize: 14
                     color: "white"
+                    renderType: Text.NativeRendering
                 }
 
                 Text {
                     text: "Дата: " + getCurrentDateString()
                     color: "white"
                     font.pixelSize: 12
+                    renderType: Text.NativeRendering
                 }
 
                 Text {
@@ -301,6 +308,7 @@ Item {
                     color: getTimeColor()
                     font.pixelSize: 12
                     font.bold: true
+                    renderType: Text.NativeRendering
                 }
 
                 Text {
@@ -308,24 +316,28 @@ Item {
                     color: "#88FF88"
                     font.pixelSize: 12
                     font.bold: true
+                    renderType: Text.NativeRendering
                 }
 
                 Text {
                     text: "Прогресс года: " + ((daysFromStart / 365) * 100).toFixed(2) + "%"
                     color: "#FFAA00"
                     font.pixelSize: 12
+                    renderType: Text.NativeRendering
                 }
 
                 Text {
                     text: "Угол вращения Земли: 23.5°"
                     color: "white"
                     font.pixelSize: 11
+                    renderType: Text.NativeRendering
                 }
 
                 Text {
                     text: "Вращение Земли: " + (earthRotationAngle * 180 / Math.PI).toFixed(1) + "°"
                     color: "white"
                     font.pixelSize: 11
+                    renderType: Text.NativeRendering
                 }
 
                 Text {
@@ -333,6 +345,7 @@ Item {
                     color: updateTimer.running ? "#88FF88" : "#FF8888"
                     font.pixelSize: 11
                     font.bold: true
+                    renderType: Text.NativeRendering
                 }
             }
         }
@@ -493,9 +506,5 @@ Item {
         resetToStartDate();
     }
 }
-
-
-
-
 
 
