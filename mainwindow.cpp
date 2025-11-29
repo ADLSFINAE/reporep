@@ -230,9 +230,6 @@ void MainWindow::setupUI()
     connect(radiusSlider, &QSlider::valueChanged, radiusValueLabel, QOverload<int>::of(&QLabel::setNum));
     connect(mapTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onMapTypeChanged);
-
-    // Статус бар
-    statusBar()->showMessage("Инициализация карты...");
 }
 
 void MainWindow::setupMap()

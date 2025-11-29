@@ -5,7 +5,7 @@ import QtQuick.Layouts 1.12
 import QtQml 2.12
 
 Item {
-    width: 1200
+    width: 1280
     height: 800
 
     property date startDate: new Date(2025, 0, 1) // 1 января 2025
@@ -17,12 +17,13 @@ Item {
     property real currentHour: 6.0
     property string timeOfDay: "Утро"
 
-    // Эллиптические параметры орбиты
-    property real earthOrbitRadiusX: 300
-    property real earthOrbitRadiusY: 200
-    property real moonOrbitRadius: 50
+    // Эллиптические параметры орбиты Земли (эксцентриситет ~0.0167)
+    property real earthOrbitSemiMajor: 300
+    property real earthOrbitSemiMinor: 298
+    property real earthOrbitFocusDistance: Math.sqrt(earthOrbitSemiMajor * earthOrbitSemiMajor - earthOrbitSemiMinor * earthOrbitSemiMinor)
+
     property real earthAngle: 0
-    property real moonAngle: 0
+    property real earthRotationAngle: 0
 
     // Таймер для постоянного обновления позиций
     Timer {
@@ -37,16 +38,66 @@ Item {
         anchors.fill: parent
         color: "#000010"
 
-        // Солнце в центре
+        // Фон с звездами
+        Canvas {
+            anchors.fill: parent
+            onPaint: {
+                var ctx = getContext("2d");
+                ctx.fillStyle = "#000010";
+                ctx.fillRect(0, 0, width, height);
+
+                // Рисуем звезды
+                ctx.fillStyle = "white";
+                for (var i = 0; i < 200; i++) {
+                    var x = Math.random() * width;
+                    var y = Math.random() * height;
+                    var size = Math.random() * 1.5;
+                    ctx.beginPath();
+                    ctx.arc(x, y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        // Эллиптическая орбита Земли
+        Canvas {
+            id: earthOrbitCanvas
+            anchors.centerIn: parent
+            width: earthOrbitSemiMajor * 2
+            height: earthOrbitSemiMinor * 2
+            onPaint: {
+                var ctx = getContext("2d");
+                ctx.clearRect(0, 0, width, height);
+                ctx.strokeStyle = "#444477";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, width, height);
+                ctx.stroke();
+
+                // Отмечаем фокусы эллипса
+                ctx.fillStyle = "#FF4444";
+                ctx.beginPath();
+                ctx.arc(earthOrbitFocusDistance, 0, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(-earthOrbitFocusDistance, 0, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Солнце в одном из фокусов эллипса
         Rectangle {
             id: sun
-            width: 80
-            height: 80
+            width: 70
+            height: 70
             radius: width / 2
             color: "#FFFF00"
             border.color: "#FF6600"
             border.width: 4
-            anchors.centerIn: parent
+
+            x: earthOrbitCanvas.x + earthOrbitCanvas.width / 2 + earthOrbitFocusDistance - width / 2
+            y: earthOrbitCanvas.y + earthOrbitCanvas.height / 2 - height / 2
 
             // Солнечная корона
             Rectangle {
@@ -59,61 +110,92 @@ Item {
                 border.width: 3
                 opacity: 0.6
             }
-        }
 
-        // Эллиптическая орбита Земли
-        Canvas {
-            anchors.centerIn: parent
-            width: earthOrbitRadiusX * 2
-            height: earthOrbitRadiusY * 2
-            onPaint: {
-                var ctx = getContext("2d");
-                ctx.clearRect(0, 0, width, height);
-                ctx.strokeStyle = "#444477";
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.ellipse(0, 0, width, height);
-                ctx.stroke();
+            // Внутреннее свечение
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width * 0.7
+                height: parent.height * 0.7
+                radius: width / 2
+                color: "#FFFF88"
+                opacity: 0.8
             }
         }
 
         // Земля
-        Rectangle {
-            id: earth
+        Item {
+            id: earthContainer
             width: 35
             height: 35
-            radius: width / 2
-            color: "#3366FF"
-            border.color: "#22AA22"
-            border.width: 2
 
-            x: sun.x + earthOrbitRadiusX * Math.cos(earthAngle) - width / 2
-            y: sun.y + earthOrbitRadiusY * Math.sin(earthAngle) - height / 2
+            // Позиция Земли на эллиптической орбите
+            x: earthOrbitCanvas.x + earthOrbitCanvas.width / 2 + earthOrbitSemiMajor * Math.cos(earthAngle) - width / 2
+            y: earthOrbitCanvas.y + earthOrbitCanvas.height / 2 + earthOrbitSemiMinor * Math.sin(earthAngle) - height / 2
 
-            // Орбита Луны
-            Rectangle {
-                id: moonOrbit
-                anchors.centerIn: parent
-                width: moonOrbitRadius * 2
-                height: moonOrbitRadius * 2
-                radius: width / 2
-                color: "transparent"
-                border.color: "#666666"
-                border.width: 1
+            // Вращение Земли вокруг своей оси
+            RotationAnimation on rotation {
+                id: earthRotation
+                from: 0
+                to: 360
+                duration: 1000 // 1 секунда для полного оборота (для наглядности)
+                loops: Animation.Infinite
+                running: updateTimer.running
             }
 
-            // Луна
+            // Земля с текстурой вращения
             Rectangle {
-                id: moon
-                width: 15
-                height: 15
+                id: earth
+                anchors.centerIn: parent
+                width: 35
+                height: 35
                 radius: width / 2
-                color: "#CCCCCC"
-                border.color: "#AAAAAA"
-                border.width: 1
+                color: "transparent"
 
-                x: moonOrbit.width / 2 + moonOrbitRadius * Math.cos(moonAngle) - width / 2
-                y: moonOrbit.height / 2 + moonOrbitRadius * Math.sin(moonAngle) - height / 2
+                // Континенты (упрощенно)
+                Canvas {
+                    anchors.fill: parent
+                    rotation: -earthContainer.rotation // Компенсируем вращение контейнера
+                    onPaint: {
+                        var ctx = getContext("2d");
+                        ctx.clearRect(0, 0, width, height);
+
+                        // Основной цвет океанов
+                        ctx.fillStyle = "#3366FF";
+                        ctx.beginPath();
+                        ctx.arc(width/2, height/2, width/2, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // Континенты
+                        ctx.fillStyle = "#22AA22";
+
+                        // Северная Америка/Евразия
+                        ctx.beginPath();
+                        ctx.ellipse(width * 0.3, height * 0.2, width * 0.4, height * 0.3);
+                        ctx.fill();
+
+                        // Южная Америка/Африка
+                        ctx.beginPath();
+                        ctx.ellipse(width * 0.2, height * 0.5, width * 0.3, height * 0.4);
+                        ctx.fill();
+
+                        // Австралия/Антарктида
+                        ctx.beginPath();
+                        ctx.ellipse(width * 0.6, height * 0.7, width * 0.25, height * 0.2);
+                        ctx.fill();
+                    }
+                }
+
+                // Атмосфера
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: parent.width * 1.1
+                    height: parent.height * 1.1
+                    radius: width / 2
+                    color: "transparent"
+                    border.color: "#88CCFF"
+                    border.width: 2
+                    opacity: 0.3
+                }
             }
         }
 
@@ -123,7 +205,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.margins: 20
-            height: 140
+            height: 100
             color: "#E0000020"
             border.color: "#444477"
             border.width: 2
@@ -134,7 +216,7 @@ Item {
                 anchors.margins: 15
 
                 Text {
-                    text: "Солнечная система - Просмотр"
+                    text: "Солнечная система - Реалистичная модель"
                     font.bold: true
                     font.pixelSize: 16
                     color: "white"
@@ -143,20 +225,10 @@ Item {
                 RowLayout {
                     Layout.fillWidth: true
 
-                    Button {
-                        text: "Сбросить на 01.01.2025"
-                        onClicked: resetToStartDate()
-                    }
-
-                    Button {
-                        text: updateTimer.running ? "Пауза" : "Продолжить"
-                        onClicked: updateTimer.running = !updateTimer.running
-                    }
-
                     Text {
-                        text: "Автосинхронизация с картой"
+                        text: "Управление временем в основном окне"
                         color: "#88FF88"
-                        font.pixelSize: 10
+                        font.pixelSize: 12
                         font.italic: true
                     }
                 }
@@ -175,12 +247,6 @@ Item {
                     Text {
                         text: "Солнце: " + (solarInfluence * 100).toFixed(1) + "%"
                         color: getInfluenceColor(solarInfluence)
-                        font.pixelSize: 11
-                    }
-
-                    Text {
-                        text: "Луна: " + (lunarInfluence * 100).toFixed(1) + "%"
-                        color: getInfluenceColor(lunarInfluence)
                         font.pixelSize: 11
                     }
 
@@ -251,19 +317,13 @@ Item {
                 }
 
                 Text {
-                    text: "Угол Земли: " + (earthAngle * 180 / Math.PI).toFixed(1) + "°"
+                    text: "Угол вращения Земли: 23.5°"
                     color: "white"
                     font.pixelSize: 11
                 }
 
                 Text {
-                    text: "Угол Луны: " + (moonAngle * 180 / Math.PI).toFixed(1) + "°"
-                    color: "white"
-                    font.pixelSize: 11
-                }
-
-                Text {
-                    text: "Фаза Луны: " + getMoonPhase()
+                    text: "Вращение Земли: " + (earthRotationAngle * 180 / Math.PI).toFixed(1) + "°"
                     color: "white"
                     font.pixelSize: 11
                 }
@@ -280,11 +340,13 @@ Item {
 
     function updatePositions() {
         // Обновляем углы на основе прошедших дней
-        earthAngle = (daysFromStart / 365) * 2 * Math.PI;
+        // Время теперь управляется извне через daysFromStart и currentHour
 
-        // Луна: полный оборот за 27.3 дня
-        var moonDays = daysFromStart % 27.3;
-        moonAngle = (moonDays / 27.3) * 2 * Math.PI;
+        // Земля: полный оборот вокруг Солнца за 365.25 дней
+        earthAngle = (daysFromStart / 365.25) * 2 * Math.PI;
+
+        // Вращение Земли вокруг своей оси (1 оборот за 1 день)
+        earthRotationAngle = (daysFromStart % 1) * 2 * Math.PI;
 
         // Обновляем влияние
         updateInfluence();
@@ -294,24 +356,23 @@ Item {
     }
 
     function updateInfluence() {
-        // Влияние Солнца
+        // Влияние Солнца (зависит от расстояния по закону обратных квадратов)
         var distance = getEarthSunDistance();
-        var normalizedDistance = distance / earthOrbitRadiusX;
+        var averageDistance = (earthOrbitSemiMajor + earthOrbitSemiMinor) / 2;
+        var normalizedDistance = distance / averageDistance;
         solarInfluence = 1.0 / (normalizedDistance * normalizedDistance);
 
         // Флуктуации солнечной активности
-        var solarFluctuation = 0.9 + (Math.sin(daysFromStart * 0.5) + 1) * 0.1;
+        var solarFluctuation = 0.95 + (Math.sin(daysFromStart * 0.3) + 1) * 0.05;
         solarInfluence *= solarFluctuation;
 
-        // Влияние Луны
-        var moonPhase = Math.cos(moonAngle - earthAngle);
-        var moonDistance = 1.0 + 0.2 * Math.sin(moonAngle * 4);
-        lunarInfluence = 0.9 + 0.3 * moonPhase * moonDistance;
+        // Влияние Луны (фиксированное значение, так как Луны нет)
+        lunarInfluence = 1.0;
 
-        // Влияние планет
-        var planet1 = Math.sin(earthAngle * 2.5) * 0.05;
-        var planet2 = Math.cos(earthAngle * 1.7) * 0.03;
-        var planet3 = Math.sin(earthAngle * 3.2 + 1) * 0.02;
+        // Влияние планет (резонансы и гравитационные возмущения)
+        var planet1 = Math.sin(earthAngle * 2.5) * 0.04;
+        var planet2 = Math.cos(earthAngle * 1.7 + 0.5) * 0.03;
+        var planet3 = Math.sin(earthAngle * 3.2 + 1.2) * 0.02;
         planetaryInfluence = 1.0 + planet1 + planet2 + planet3;
 
         // Корректируем по времени суток
@@ -331,6 +392,9 @@ Item {
     }
 
     function updateTimeOfDay() {
+        // Обновляем текущий час на основе вращения Земли
+        currentHour = (earthRotationAngle / (2 * Math.PI)) * 24;
+
         var h = currentHour;
         if (h >= 4 && h < 8) timeOfDay = "Рассвет";
         else if (h >= 8 && h < 12) timeOfDay = "Утро";
@@ -349,19 +413,10 @@ Item {
     }
 
     function getEarthSunDistance() {
-        var r = (earthOrbitRadiusX * earthOrbitRadiusY) /
-                Math.sqrt(Math.pow(earthOrbitRadiusY * Math.cos(earthAngle), 2) +
-                         Math.pow(earthOrbitRadiusX * Math.sin(earthAngle), 2));
+        // Расстояние от Земли до Солнца в эллиптической орбите
+        var r = (earthOrbitSemiMajor * (1 - (earthOrbitFocusDistance/earthOrbitSemiMajor)*(earthOrbitFocusDistance/earthOrbitSemiMajor))) /
+                (1 + (earthOrbitFocusDistance/earthOrbitSemiMajor) * Math.cos(earthAngle));
         return r;
-    }
-
-    function getMoonPhase() {
-        var phase = Math.cos(moonAngle - earthAngle);
-        if (phase > 0.7) return "🌕 Полнолуние";
-        if (phase > 0.3) return "🌖 Убывающая";
-        if (phase > -0.3) return "🌑 Новолуние";
-        if (phase > -0.7) return "🌒 Растущая";
-        return "🌕 Полнолуние";
     }
 
     function formatTime(time) {
@@ -386,6 +441,7 @@ Item {
         currentDateTime = new Date(2025, 0, 1);
         currentHour = 6.0;
         daysFromStart = 0;
+        earthRotationAngle = 0;
         updatePositions();
     }
 
@@ -437,3 +493,9 @@ Item {
         resetToStartDate();
     }
 }
+
+
+
+
+
+
