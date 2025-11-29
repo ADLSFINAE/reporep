@@ -2,7 +2,9 @@
     <qresource prefix="/">
         <file>map.qml</file>
         <file>Marker.qml</file>
-        <file>MeasurementZone.qml</file>
-        <file>RadiationZone.qml</file>
+        <file>NoiseLayer.qml</file>
+        <file>NoiseArea.qml</file>
+        <file>NoiseCircle.qml</file>
+        <file>JsonData.qml</file>
     </qresource>
 </RCC>

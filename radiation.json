@@ -1,0 +1,116 @@
+{
+  "version": "1.0",
+  "description": "Конфигурация зон радиоизлучения Москвы",
+  "circles": [
+    {
+      "id": "center_high",
+      "latitude": 55.7558,
+      "longitude": 37.6173,
+      "radius": 500,
+      "baseNoiseLevel": -60,
+      "color": "#FFFF0000",
+      "title": "Кремль - Очень высокий",
+      "enabled": true
+    },
+    {
+      "id": "center_medium",
+      "latitude": 55.7558,
+      "longitude": 37.6173,
+      "radius": 1000,
+      "baseNoiseLevel": -70,
+      "color": "#CCFF4400",
+      "title": "Центр - Высокий",
+      "enabled": true
+    },
+    {
+      "id": "center_low",
+      "latitude": 55.7558,
+      "longitude": 37.6173,
+      "radius": 1500,
+      "baseNoiseLevel": -75,
+      "color": "#99FF8800",
+      "title": "Окраины центра - Повышенный",
+      "enabled": true
+    },
+    {
+      "id": "north_zone",
+      "latitude": 55.8500,
+      "longitude": 37.6000,
+      "radius": 800,
+      "baseNoiseLevel": -80,
+      "color": "#66FFCC00",
+      "title": "Северный округ",
+      "enabled": true
+    },
+    {
+      "id": "south_zone",
+      "latitude": 55.6500,
+      "longitude": 37.6000,
+      "radius": 1200,
+      "baseNoiseLevel": -85,
+      "color": "#33FFFF00",
+      "title": "Южный округ",
+      "enabled": true
+    },
+    {
+      "id": "east_zone",
+      "latitude": 55.7500,
+      "longitude": 37.8000,
+      "radius": 1000,
+      "baseNoiseLevel": -82,
+      "color": "#44FFFF00",
+      "title": "Восточный округ",
+      "enabled": true
+    },
+    {
+      "id": "west_zone",
+      "latitude": 55.7500,
+      "longitude": 37.4000,
+      "radius": 900,
+      "baseNoiseLevel": -78,
+      "color": "#77FFAA00",
+      "title": "Западный округ",
+      "enabled": true
+    },
+    {
+      "id": "airport_svo",
+      "latitude": 55.9728,
+      "longitude": 37.4146,
+      "radius": 2000,
+      "baseNoiseLevel": -65,
+      "color": "#FFFF4444",
+      "title": "Шереметьево - Высокий",
+      "enabled": true
+    },
+    {
+      "id": "airport_dme",
+      "latitude": 55.4086,
+      "longitude": 37.9063,
+      "radius": 1800,
+      "baseNoiseLevel": -68,
+      "color": "#FFFF6644",
+      "title": "Домодедово - Высокий",
+      "enabled": true
+    },
+    {
+      "id": "business_center",
+      "latitude": 55.7470,
+      "longitude": 37.5394,
+      "radius": 600,
+      "baseNoiseLevel": -58,
+      "color": "#FFFF0000",
+      "title": "Москва-Сити - Максимальный",
+      "enabled": true
+    },
+    {
+      "id": "university",
+      "latitude": 55.7030,
+      "longitude": 37.5300,
+      "radius": 400,
+      "baseNoiseLevel": -75,
+      "color": "#99FF8800",
+      "title": "МГУ - Средний",
+      "enabled": true
+    }
+  ]
+}

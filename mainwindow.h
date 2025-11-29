@@ -12,12 +12,10 @@
 #include <QComboBox>
 #include <QStatusBar>
 #include <QMessageBox>
-#include <QGroupBox>
-#include <QSpinBox>
-#include <QTimer>
 
 #include <QQuickWidget>
 #include <QQmlContext>
+#include <QQuickItem>
 
 class MainWindow : public QMainWindow
 {
@@ -31,24 +29,19 @@ private slots:
     void onZoomInClicked();
     void onZoomOutClicked();
     void onFlyToClicked();
-    void onAddMeasurementZoneClicked();
+    void onAddMarkerClicked();
     void onMapTypeChanged(int index);
     void onZoomSliderChanged(int value);
-    void onRadiusChanged(int value);
-    void onStartMonitoringClicked();
-    void onStopMonitoringClicked();
-    void onClearClicked();
+    void onAnalysisRadiusChanged(int value);
 
     void onMapLoaded();
 
 private:
     void setupUI();
     void setupMap();
-    void addMeasurementZone(double lat, double lng, double radiusKm);
-    void updateRadiationVisualization(double lat, double lng, double noiseLevel70cm, double noiseLevel2m);
-    void simulateDataCollection();
-    void clearVisualizations();
-    void callQMLFunction(const QString &function, const QVariant &arg1 = QVariant(),
+    void addMarker(double lat, double lng, const QString &title, double noiseLevel);
+    void clearMarkers();
+    bool invokeQMLMethod(const QString &method, const QVariant &arg1 = QVariant(),
                         const QVariant &arg2 = QVariant(), const QVariant &arg3 = QVariant());
 
     QQuickWidget *mapWidget;
@@ -57,26 +50,16 @@ private:
     QLineEdit *latEdit;
     QLineEdit *lngEdit;
     QLineEdit *zoomEdit;
-    QSpinBox *radiusSpinBox;
     QPushButton *flyToButton;
-    QPushButton *addZoneButton;
-    QPushButton *startMonitoringButton;
-    QPushButton *stopMonitoringButton;
-    QPushButton *clearButton;
+    QPushButton *addMarkerButton;
+    QPushButton *clearMarkersButton;
     QPushButton *zoomInButton;
     QPushButton *zoomOutButton;
     QSlider *zoomSlider;
+    QSlider *radiusSlider;
     QComboBox *mapTypeCombo;
 
-    // Данные мониторинга
-    QTimer *monitoringTimer;
-    int measurementCounter;
-    bool isMonitoring;
-
-    // Отображение данных
-    QLabel *statusLabel;
-    QLabel *measurement70cmLabel;
-    QLabel *measurement2mLabel;
+    int markerCounter;
 };
 
 #endif // MAINWINDOW_H

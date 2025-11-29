@@ -25,4 +25,5 @@ DISTFILES += \
     map.qml
 
 RESOURCES += \
+    inform.qrc \
     resourc.qrc

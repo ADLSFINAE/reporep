@@ -2,6 +2,7 @@ import QtQuick 2.12
 import QtLocation 5.12
 
 MapQuickItem {
+    id: mapMarker
     anchorPoint.x: marker.width / 2
     anchorPoint.y: marker.height
 
@@ -10,33 +11,28 @@ MapQuickItem {
 
     sourceItem: Rectangle {
         id: marker
-        width: 25
-        height: 25
+        width: 35
+        height: 35
         radius: width / 2
         color: getColor(noiseLevel)
-        border.width: 2
+        border.width: 3
         border.color: "white"
 
         Text {
             anchors.centerIn: parent
             color: "white"
             font.bold: true
-            font.pixelSize: 10
-            text: title.split(' ')[1] // Показываем только номер маркера
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: {
-                console.log("Marker clicked:", title, "Noise:", noiseLevel)
-            }
+            font.pixelSize: 12
+            text: title
         }
     }
 
     function getColor(level) {
-        if (level > -80) return "red"
-        if (level > -90) return "orange"
-        return "green"
+        if (level > -70) return "#FF0000";
+        if (level > -80) return "#FF8800";
+        if (level > -90) return "#FFFF00";
+        if (level > -100) return "#00FF00";
+        return "#0000FF";
     }
 }
 
