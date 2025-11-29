@@ -18,6 +18,7 @@ Item {
     property int timeSpeed: 1
     property var speedMultipliers: [1, 2, 5, 10, 60]
     property var speedLabels: ["x1", "x2", "x5", "x10", "x60"]
+    property string configFilePath: "radiation.json"
 
     // Цветовая схема для уровней радиоизлучения
     property var noiseLevels: [
@@ -110,158 +111,61 @@ Item {
         }
     }
 
-    // Функция для загрузки конфигурации из JSON
+    // Функция для загрузки конфигурации из JSON файла
     function loadConfigurationFromJson() {
-        console.log("Загрузка конфигурации из JSON...");
+        console.log("Загрузка конфигурации из файла:", configFilePath);
+
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", configFilePath);
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200) {
+                    try {
+                        var config = JSON.parse(xhr.responseText);
+                        processJsonConfiguration(config);
+                        console.log("JSON успешно загружен из файла");
+                    } catch (e) {
+                        console.log("Ошибка парсинга JSON:", e.toString());
+                        loadDemoConfiguration();
+                    }
+                } else {
+                    console.log("Ошибка загрузки файла:", xhr.status, xhr.statusText);
+                    loadDemoConfiguration();
+                }
+            }
+        };
+        xhr.send();
+    }
+
+    // Обработка загруженной JSON конфигурации
+    function processJsonConfiguration(config) {
+        console.log("Обработка JSON конфигурации...");
 
         // Очищаем старые круги
         clearNoiseCircles();
 
-        // В реальном приложении здесь будет загрузка из файла
-        // Для демонстрации используем встроенный JSON
-        var configJson = getDefaultConfiguration();
-
         try {
-            var config = JSON.parse(configJson);
-            console.log("Загружено зон из конфигурации:", config.circles.length);
+            if (config && config.circles) {
+                console.log("Загружено зон из конфигурации:", config.circles.length);
 
-            // Создаем круги из конфигурации
-            for (var i = 0; i < config.circles.length; i++) {
-                var circleConfig = config.circles[i];
-                if (circleConfig.enabled) {
-                    createNoiseCircleFromConfig(circleConfig);
+                // Создаем круги из конфигурации
+                for (var i = 0; i < config.circles.length; i++) {
+                    var circleConfig = config.circles[i];
+                    if (circleConfig.enabled) {
+                        createNoiseCircleFromConfig(circleConfig);
+                    }
                 }
+
+                console.log("Успешно создано кругов:", noiseCircles.length);
+                updateConfigInfo("Файл: " + configFilePath + " | Зон: " + noiseCircles.length);
+            } else {
+                console.log("Неверный формат JSON конфигурации");
+                loadDemoConfiguration();
             }
-
-            console.log("Успешно создано кругов:", noiseCircles.length);
-            return true;
-
         } catch (error) {
-            console.log("Ошибка загрузки конфигурации:", error);
-            // В случае ошибки загружаем демо-конфигурацию
+            console.log("Ошибка обработки JSON:", error);
             loadDemoConfiguration();
-            return false;
         }
-    }
-
-    // Демо-конфигурация (в реальном приложении загружается из файла)
-    function getDefaultConfiguration() {
-        return `{
-            "version": "1.0",
-            "description": "Конфигурация зон радиоизлучения Москвы",
-            "circles": [
-                {
-                    "id": "center_high",
-                    "latitude": 55.7558,
-                    "longitude": 37.6173,
-                    "radius": 500,
-                    "baseNoiseLevel": -60,
-                    "color": "#FFFF0000",
-                    "title": "Кремль - Очень высокий",
-                    "enabled": true
-                },
-                {
-                    "id": "center_medium",
-                    "latitude": 55.7558,
-                    "longitude": 37.6173,
-                    "radius": 1000,
-                    "baseNoiseLevel": -70,
-                    "color": "#CCFF4400",
-                    "title": "Центр - Высокий",
-                    "enabled": true
-                },
-                {
-                    "id": "center_low",
-                    "latitude": 55.7558,
-                    "longitude": 37.6173,
-                    "radius": 1500,
-                    "baseNoiseLevel": -75,
-                    "color": "#99FF8800",
-                    "title": "Окраины центра - Повышенный",
-                    "enabled": true
-                },
-                {
-                    "id": "north_zone",
-                    "latitude": 55.8500,
-                    "longitude": 37.6000,
-                    "radius": 800,
-                    "baseNoiseLevel": -80,
-                    "color": "#66FFCC00",
-                    "title": "Северный округ",
-                    "enabled": true
-                },
-                {
-                    "id": "south_zone",
-                    "latitude": 55.6500,
-                    "longitude": 37.6000,
-                    "radius": 1200,
-                    "baseNoiseLevel": -85,
-                    "color": "#33FFFF00",
-                    "title": "Южный округ",
-                    "enabled": true
-                },
-                {
-                    "id": "east_zone",
-                    "latitude": 55.7500,
-                    "longitude": 37.8000,
-                    "radius": 1000,
-                    "baseNoiseLevel": -82,
-                    "color": "#44FFFF00",
-                    "title": "Восточный округ",
-                    "enabled": true
-                },
-                {
-                    "id": "west_zone",
-                    "latitude": 55.7500,
-                    "longitude": 37.4000,
-                    "radius": 900,
-                    "baseNoiseLevel": -78,
-                    "color": "#77FFAA00",
-                    "title": "Западный округ",
-                    "enabled": true
-                },
-                {
-                    "id": "airport_svo",
-                    "latitude": 55.9728,
-                    "longitude": 37.4146,
-                    "radius": 2000,
-                    "baseNoiseLevel": -65,
-                    "color": "#FFFF4444",
-                    "title": "Шереметьево - Высокий",
-                    "enabled": true
-                },
-                {
-                    "id": "airport_dme",
-                    "latitude": 55.4086,
-                    "longitude": 37.9063,
-                    "radius": 1800,
-                    "baseNoiseLevel": -68,
-                    "color": "#FFFF6644",
-                    "title": "Домодедово - Высокий",
-                    "enabled": true
-                },
-                {
-                    "id": "business_center",
-                    "latitude": 55.7470,
-                    "longitude": 37.5394,
-                    "radius": 600,
-                    "baseNoiseLevel": -58,
-                    "color": "#FFFF0000",
-                    "title": "Москва-Сити - Максимальный",
-                    "enabled": true
-                },
-                {
-                    "id": "university",
-                    "latitude": 55.7030,
-                    "longitude": 37.5300,
-                    "radius": 400,
-                    "baseNoiseLevel": -75,
-                    "color": "#99FF8800",
-                    "title": "МГУ - Средний",
-                    "enabled": true
-                }
-            ]
-        }`;
     }
 
     // Загрузка демо-конфигурации при ошибке
@@ -271,15 +175,17 @@ Item {
 
         // Простая демо-конфигурация
         var demoCircles = [
-            { lat: 55.7558, lng: 37.6173, radius: 500, level: -60, color: "#FFFF0000", title: "Центр" },
-            { lat: 55.7558, lng: 37.6173, radius: 1000, level: -70, color: "#CCFF4400", title: "Центр" },
-            { lat: 55.7558, lng: 37.6173, radius: 1500, level: -75, color: "#99FF8800", title: "Центр" }
+            { lat: 55.7558, lng: 37.6173, radius: 500, level: -60, color: "#FFFF0000", title: "Центр Москвы" },
+            { lat: 55.7558, lng: 37.6173, radius: 1000, level: -70, color: "#CCFF4400", title: "Центральный округ" },
+            { lat: 55.7558, lng: 37.6173, radius: 1500, level: -75, color: "#99FF8800", title: "Пригород" }
         ];
 
         for (var i = 0; i < demoCircles.length; i++) {
             var circle = demoCircles[i];
             createNoiseCircle(circle.lat, circle.lng, circle.radius, circle.color, circle.level, circle.title);
         }
+
+        updateConfigInfo("Демо-конфигурация | Зон: " + noiseCircles.length);
     }
 
     // Создание круга из конфигурации
@@ -304,13 +210,18 @@ Item {
         return null;
     }
 
+    // Обновление информации о конфигурации
+    function updateConfigInfo(info) {
+        configInfoText.text = info;
+    }
+
     // Панель информации о времени
     Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.margins: 10
         width: 260
-        height: 130
+        height: 150
         color: "#E0FFFFFF"
         opacity: 0.9
         border.width: 1
@@ -351,9 +262,10 @@ Item {
             }
 
             Text {
-                text: "Зон загружено: " + noiseCircles.length
+                id: configInfoText
+                text: "Загрузка конфигурации..."
                 font.pixelSize: 8
-                color: "darkgray"
+                color: "darkgreen"
             }
 
             Text {
@@ -437,7 +349,7 @@ Item {
             }
 
             Text {
-                text: "Зон: " + noiseCircles.length
+                text: "Файл: radiation.json"
                 font.pixelSize: 8
                 color: "darkblue"
             }
@@ -483,9 +395,6 @@ Item {
         updateDayNightCycle();
     }
 
-    // Остальные функции (getTimeColor, getTimeOfDay, formatTime, updateDayNightCycle, etc.)
-    // остаются без изменений из предыдущего кода...
-
     function updateDayNightCycle() {
         var h = currentTime;
         var newFactor;
@@ -525,51 +434,27 @@ Item {
         }
     }
 
+    // Упрощенная функция обновления внешнего вида кругов
     function updateCirclesAppearance() {
         var h = currentTime;
         var baseOpacity;
 
         if (h >= 6 && h < 20) {
-            var dayProgress = (h - 6) / 14;
-            baseOpacity = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(dayProgress * Math.PI));
+            // Днем более непрозрачные
+            baseOpacity = 0.6;
         } else {
-            var nightProgress = h < 6 ? (h + 4) / 10 : (h - 20) / 4;
-            baseOpacity = 0.2 + 0.3 * (0.5 - 0.5 * Math.cos(nightProgress * Math.PI * 2));
+            // Ночью более прозрачные
+            baseOpacity = 0.3;
         }
 
         for (var i = 0; i < noiseCircles.length; i++) {
             var circle = noiseCircles[i];
             if (circle) {
+                // Внутренние круги более непрозрачные
                 var circleOpacity = baseOpacity * (1 - i / noiseCircles.length * 0.6);
-                circle.opacity = Math.max(0.05, Math.min(0.85, circleOpacity));
-                updateCircleColor(circle, i);
+                circle.opacity = Math.max(0.1, Math.min(0.8, circleOpacity));
             }
         }
-    }
-
-    function updateCircleColor(circle, index) {
-        var baseColor = circle.color;
-        var h = currentTime;
-
-        var colorFactor;
-        if (h >= 6 && h < 18) {
-            var warmProgress = (h - 6) / 12;
-            colorFactor = 0.8 + 0.2 * Math.sin(warmProgress * Math.PI);
-        } else {
-            var coolProgress = h < 6 ? (h + 6) / 12 : (h - 18) / 6;
-            colorFactor = 0.3 + 0.5 * (1 - Math.abs(coolProgress - 0.5) * 2);
-        }
-
-        var r = Math.min(255, parseInt(baseColor.substr(3, 2), 16) * colorFactor);
-        var g = Math.min(255, parseInt(baseColor.substr(5, 2), 16) * colorFactor);
-        var b = Math.min(255, parseInt(baseColor.substr(7, 2), 16) +
-                         (255 - parseInt(baseColor.substr(7, 2), 16)) * (1 - colorFactor));
-        var a = baseColor.substr(1, 2);
-
-        circle.color = "#" + a +
-                     Math.floor(r).toString(16).padStart(2, '0') +
-                     Math.floor(g).toString(16).padStart(2, '0') +
-                     Math.floor(b).toString(16).padStart(2, '0');
     }
 
     function clearNoiseCircles() {
@@ -597,7 +482,6 @@ Item {
         return null;
     }
 
-    // Остальные функции (calculateAverageNoise, showAreaAnalysis, etc.)...
     function calculateAverageNoise(centerLat, centerLng, radius) {
         var centerCoord = QtPositioning.coordinate(centerLat, centerLng);
         var totalWeightedNoise = 0;
@@ -693,20 +577,16 @@ Item {
     function getTimeColor() {
         var h = currentTime;
         if (h >= 5 && h < 7) {
-            var dawnProgress = (h - 5) / 2;
-            return Qt.rgba(0.2 + 0.8 * dawnProgress, 0.4 + 0.4 * dawnProgress, 1.0 - 0.6 * dawnProgress, 1);
+            return "#FFAA00"; // Рассвет - золотой
         }
         else if (h >= 7 && h < 17) {
-            var dayProgress = (h - 7) / 10;
-            return Qt.rgba(1.0, 0.6 - 0.2 * dayProgress, 0.0 + 0.2 * dayProgress, 1);
+            return "#FF6600"; // День - оранжевый
         }
         else if (h >= 17 && h < 20) {
-            var sunsetProgress = (h - 17) / 3;
-            return Qt.rgba(1.0 - 0.3 * sunsetProgress, 0.4 - 0.4 * sunsetProgress, 0.2 + 0.3 * sunsetProgress, 1);
+            return "#FF3300"; // Вечер - красно-оранжевый
         }
         else {
-            var nightProgress = h < 5 ? (h + 4) / 9 : (h - 20) / 9;
-            return Qt.rgba(0.7 - 0.5 * nightProgress, 0.0 + 0.2 * nightProgress, 0.5 + 0.5 * nightProgress, 1);
+            return "#3366FF"; // Ночь - синий
         }
     }
 
@@ -726,7 +606,6 @@ Item {
         return hours.toString().padStart(2, '0') + ":" + minutes.toString().padStart(2, '0');
     }
 
-    // Остальные функции управления...
     function setCenter(lat, lng, zoom) {
         map.center = QtPositioning.coordinate(lat, lng);
         if (zoom !== undefined) map.zoomLevel = zoom;
@@ -776,7 +655,7 @@ Item {
     }
 
     Component.onCompleted: {
-        console.log("Инициализация с JSON конфигурацией...");
+        console.log("Инициализация с загрузкой из radiation.json...");
         loadConfigurationFromJson();
         updateDayNightCycle();
     }
@@ -786,8 +665,8 @@ Item {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.margins: 10
-        width: 300
-        height: 160
+        width: 320
+        height: 170
         color: "#E0FFFFFF"
         opacity: 0.9
         border.width: 1
@@ -875,14 +754,14 @@ Item {
                 }
 
                 Rectangle {
-                    width: 100
+                    width: 120
                     height: 25
                     color: "lightcoral"
                     radius: 3
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Перезагрузить"
+                        text: "Обновить JSON"
                         font.pixelSize: 9
                     }
 
@@ -910,7 +789,7 @@ Item {
                 }
 
                 Text {
-                    text: "Конфигурация: JSON"
+                    text: "Конфигурация: radiation.json"
                     font.pixelSize: 8
                     color: "darkgreen"
                 }
