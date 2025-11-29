@@ -26,6 +26,9 @@ Item {
     property date startDate: new Date(2025, 0, 1) // 1 января 2025
     property real daysFromStart: 0
     property real totalDays: 0
+    property int fullDaysPassed: 0
+    property real currentDayProgress: 0.0
+    property real totalTimePassed: 0.0 // Общее время в часах с начала
 
     // Цветовая схема для уровней радиоизлучения
     property var noiseLevels: [
@@ -48,7 +51,15 @@ Item {
         onTriggered: {
             var minutesToAdd = timeSpeed;
             targetTime += minutesToAdd / 60;
-            if (targetTime >= 24) targetTime -= 24;
+
+            // Добавляем к общему времени
+            totalTimePassed += minutesToAdd / 60;
+
+            // Если прошли полные сутки, увеличиваем счетчик дней
+            if (targetTime >= 24) {
+                targetTime -= 24;
+                fullDaysPassed += 1;
+            }
         }
     }
 
@@ -231,7 +242,7 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.margins: 10
-        width: 300
+        width: 320
         height: 200
         color: "#E0FFFFFF"
         opacity: 0.9
@@ -446,10 +457,10 @@ Item {
         dayNightFactor += (newFactor - dayNightFactor) * 0.02;
         updateTotalInfluence();
 
-        // Обновляем подсчет дней
+        // Обновляем подсчет дней на основе общего времени
         updateDaysCounter();
 
-        timeText.text = formatTime(currentTime) + " (" + getTimeOfDay() + ")" + " | День: " + daysFromStart.toFixed(3);
+        timeText.text = formatTime(currentTime) + " (" + getTimeOfDay() + ")" + " | День: " + Math.floor(daysFromStart);
         timeText.color = getTimeColor();
         speedText.text = "Скорость: " + speedLabels[getSpeedIndex()] + " (1 сек = " + timeSpeed + " мин)";
         speedText.color = getSpeedColor();
@@ -473,26 +484,18 @@ Item {
         updateCirclesAppearance();
     }
 
-    // В функции updateDaysCounter() map.qml добавьте:
+    // Функция подсчета дней на основе общего прошедшего времени
     function updateDaysCounter() {
-        // Базовое время: 6:00 утра 1 января 2025
-        var baseHour = 6.0;
+        // Общее время в часах с начала симуляции
+        // Каждые 24 часа реального времени = 1 день в симуляции
+        // Но с учетом ускорения времени
 
-        // Разница в часах от базового времени
-        var hoursDiff = currentTime - baseHour;
-
-        // Если время меньше базового, значит прошли сутки
-        if (hoursDiff < 0) {
-            hoursDiff += 24;
-        }
-
-        // Преобразуем разницу в часах в дни (с дробной частью)
-        daysFromStart = hoursDiff / 24;
+        // Преобразуем общее время в дни
+        daysFromStart = totalTimePassed / 24;
         totalDays = daysFromStart;
 
         // Отладочная информация
-        console.log("Time update - Current:", currentTime.toFixed(3),
-                    "Base:", baseHour, "Diff:", hoursDiff.toFixed(3),
+        console.log("Time update - Total hours:", totalTimePassed.toFixed(3),
                     "Days:", daysFromStart.toFixed(3));
     }
 
@@ -732,7 +735,8 @@ Item {
         return {
             currentTime: currentTime,
             daysFromStart: daysFromStart,
-            totalDays: totalDays
+            totalDays: totalDays,
+            totalTimePassed: totalTimePassed
         };
     }
 
