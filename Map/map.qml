@@ -13,7 +13,6 @@ Item {
     property var noiseCircles: []
     property double currentRadius: 1000
     property real currentTime: 6.0
-    property real dayNightFactor: 1.0
     property real targetTime: 6.0
     property int timeSpeed: 1
     property var speedMultipliers: [1, 2, 5, 10, 60, 2400]
@@ -29,6 +28,11 @@ Item {
     property int fullDaysPassed: 0
     property real currentDayProgress: 0.0
     property real totalTimePassed: 0.0 // Общее время в часах с начала
+
+    // Свойства для спутников
+    property var satellites: []
+    property bool showSatellites: true
+    property real dayNightFactor: 1.0
 
     // Цветовая схема для уровней радиоизлучения
     property var noiseLevels: [
@@ -131,6 +135,8 @@ Item {
                 }
             }
         }
+
+        // Спутники будут добавляться динамически здесь
     }
 
     // Функция для загрузки конфигурации из JSON файла
@@ -304,9 +310,10 @@ Item {
             }
 
             Text {
-                text: "Следующий час: " + (60 - Math.floor((currentTime % 1) * 60)) + " мин"
-                font.pixelSize: 8
-                color: "darkgray"
+                text: "Спутников: " + satellites.length
+                font.pixelSize: 9
+                color: "red"
+                font.bold: true
             }
         }
     }
@@ -495,8 +502,8 @@ Item {
         totalDays = daysFromStart;
 
         // Отладочная информация
-        console.log("Time update - Total hours:", totalTimePassed.toFixed(3),
-                    "Days:", daysFromStart.toFixed(3));
+        // console.log("Time update - Total hours:", totalTimePassed.toFixed(3),
+        //             "Days:", daysFromStart.toFixed(3));
     }
 
     // Упрощенная функция обновления внешнего вида кругов
@@ -740,10 +747,414 @@ Item {
         };
     }
 
-    Component.onCompleted: {
-        console.log("Инициализация с загрузкой из radiation.json...");
-        loadConfigurationFromJson();
-        updateDayNightCycle();
+    // Функции для управления спутниками
+    function addSatellite(trajectory, altitude, speed, name, color) {
+        var component = Qt.createComponent("qrc:/Map/Items/Satellite.qml");
+        if (component.status === Component.Ready) {
+            var satellite = component.createObject(map);
+            satellite.setTrajectory(trajectory);
+            if (altitude) satellite.setAltitude(altitude);
+            if (speed) satellite.speed = speed;
+            if (name) satellite.satelliteName = name;
+            if (color) satellite.satelliteColor = color;
+            satellite.visible = showSatellites;
+            satellites.push(satellite);
+            map.addMapItem(satellite);
+            console.log("Добавлен спутник:", name, "с траекторией из", trajectory.length, "точек");
+            return satellite;
+        } else {
+            console.log("Ошибка создания спутника:", component.errorString());
+        }
+        return null;
+    }
+
+    function clearSatellites() {
+        for (var i = 0; i < satellites.length; i++) {
+            map.removeMapItem(satellites[i]);
+            satellites[i].destroy();
+        }
+        satellites = [];
+        console.log("Все спутники очищены");
+    }
+
+    function setSatellitesVisible(visible) {
+        showSatellites = visible;
+        for (var i = 0; i < satellites.length; i++) {
+            if (satellites[i]) {
+                satellites[i].visible = visible;
+            }
+        }
+    }
+
+    function toggleSatellitesVisibility() {
+        setSatellitesVisible(!showSatellites);
+        return showSatellites;
+    }
+
+    // Генерация полярной орбиты (проходит через полюса)
+    function generatePolarOrbit(centerLng, inclination, altitude, points) {
+        var trajectory = [];
+
+        for (var i = 0; i < points; i++) {
+            var angle = (i / points) * 2 * Math.PI;
+
+            // Полярная орбита - от 90° до -90° широты
+            var lat = 90 * Math.cos(angle); // От +90 до -90
+            var lng = centerLng + 180 * Math.sin(angle) * Math.sin(inclination);
+
+            // Нормализация долготы
+            while (lng > 180) lng -= 360;
+            while (lng < -180) lng += 360;
+
+            trajectory.push(QtPositioning.coordinate(lat, lng));
+        }
+
+        return trajectory;
+    }
+
+    // Генерация наклонной орбиты
+    function generateInclinedOrbit(inclination, startLng, altitude, points) {
+        var trajectory = [];
+
+        for (var i = 0; i < points; i++) {
+            var angle = (i / points) * 2 * Math.PI;
+
+            var lat = Math.asin(Math.sin(angle) * Math.sin(inclination)) * (180 / Math.PI);
+            var lng = startLng + Math.atan2(Math.tan(angle), Math.cos(inclination)) * (180 / Math.PI);
+
+            // Нормализация долготы
+            while (lng > 180) lng -= 360;
+            while (lng < -180) lng += 360;
+
+            trajectory.push(QtPositioning.coordinate(lat, lng));
+        }
+
+        return trajectory;
+    }
+
+    // Генерация экваториальной орбиты
+    function generateEquatorialOrbit(startLat, altitude, points) {
+        var trajectory = [];
+
+        for (var i = 0; i < points; i++) {
+            var angle = (i / points) * 2 * Math.PI;
+
+            var lat = startLat;
+            var lng = (angle * (180 / Math.PI)) % 360 - 180;
+
+            trajectory.push(QtPositioning.coordinate(lat, lng));
+        }
+
+        return trajectory;
+    }
+
+    // Генерация орбиты Молния (высокоэллиптическая)
+    function generateMolniyaOrbit(inclination, startLng, points) {
+        var trajectory = [];
+        var eccentricity = 0.74; // Высокий эксцентриситет
+
+        for (var i = 0; i < points; i++) {
+            var angle = (i / points) * 2 * Math.PI;
+
+            // Эллиптическая орбита
+            var trueAnomaly = angle;
+            var lat = Math.asin(Math.sin(trueAnomaly) * Math.sin(inclination)) * (180 / Math.PI);
+            var lng = startLng + Math.atan2(Math.tan(trueAnomaly), Math.cos(inclination)) * (180 / Math.PI);
+
+            // Нормализация
+            while (lng > 180) lng -= 360;
+            while (lng < -180) lng += 360;
+
+            trajectory.push(QtPositioning.coordinate(lat, lng));
+        }
+
+        return trajectory;
+    }
+
+    function addRandomSatellite() {
+        var orbitTypes = ["polar", "inclined", "equatorial", "molniya"];
+        var orbitType = orbitTypes[Math.floor(Math.random() * orbitTypes.length)];
+
+        var names = ["Спутник-1", "Метеор-М", "Ресурс-П", "Электро-Л", "Арктика-М", "Глонасс", "Канопус-В"];
+        var colors = ["red", "blue", "green", "purple", "orange", "cyan", "magenta"];
+
+        var trajectory;
+        var altitude;
+        var name = names[Math.floor(Math.random() * names.length)];
+        var color = colors[Math.floor(Math.random() * colors.length)];
+
+        switch(orbitType) {
+            case "polar":
+                trajectory = generatePolarOrbit(
+                    Math.random() * 360 - 180, // случайная долгота
+                    Math.PI / 2, // строго полярная
+                    800 + Math.random() * 1000, // 800-1800 км
+                    200
+                );
+                altitude = 800 + Math.random() * 1000;
+                break;
+
+            case "inclined":
+                trajectory = generateInclinedOrbit(
+                    Math.PI / 4 + Math.random() * Math.PI / 4, // наклон 45-90°
+                    Math.random() * 360 - 180,
+                    1500 + Math.random() * 10000,
+                    150
+                );
+                altitude = 1500 + Math.random() * 10000;
+                break;
+
+            case "equatorial":
+                trajectory = generateEquatorialOrbit(
+                    Math.random() * 30 - 15, // около экватора
+                    35786, // геостационарная высота
+                    100
+                );
+                altitude = 35786;
+                break;
+
+            case "molniya":
+                trajectory = generateMolniyaOrbit(
+                    Math.PI / 3, // наклон 60°
+                    Math.random() * 360 - 180,
+                    120
+                );
+                altitude = 40000; // высокая эллиптическая
+                break;
+        }
+
+        addSatellite(trajectory, altitude, 1.0, name, color);
+    }
+
+    // Инициализация демо-спутников при загрузке
+    function initializeDemoSatellites() {
+        // Очищаем существующие спутники
+        clearSatellites();
+
+        // Полярные спутники (проходят через полюса)
+        var polarOrbit1 = generatePolarOrbit(30, Math.PI/2, 850, 200);
+        addSatellite(polarOrbit1, 850, 1.0, "Метеор-М1", "blue");
+
+        var polarOrbit2 = generatePolarOrbit(-60, Math.PI/2, 900, 200);
+        addSatellite(polarOrbit2, 900, 1.2, "Канопус-В", "green");
+
+        var polarOrbit3 = generatePolarOrbit(120, Math.PI/2, 800, 200);
+        addSatellite(polarOrbit3, 800, 0.8, "Ресурс-П", "orange");
+
+        // Наклонные орбиты
+        var inclinedOrbit1 = generateInclinedOrbit(Math.PI/3, 0, 20000, 150);
+        addSatellite(inclinedOrbit1, 20000, 0.5, "Глонасс-М", "purple");
+
+        var inclinedOrbit2 = generateInclinedOrbit(Math.PI/4, 90, 1000, 150);
+        addSatellite(inclinedOrbit2, 1000, 1.5, "Ионосфера-М", "cyan");
+
+        // Экваториальная орбита (геостационарная)
+        var equatorialOrbit = generateEquatorialOrbit(0, 35786, 100);
+        addSatellite(equatorialOrbit, 35786, 0.2, "Электро-Л", "red");
+
+        // Орбита Молния (высокоэллиптическая)
+        var molniyaOrbit = generateMolniyaOrbit(Math.PI/3, -90, 120);
+        addSatellite(molniyaOrbit, 40000, 0.3, "Арктика-М", "magenta");
+
+        console.log("Инициализировано демо-спутников:", satellites.length);
+    }
+
+    // Функция для добавления конкретного типа орбиты
+    function addPolarSatellite() {
+        var names = ["Полярный-1", "Метеор", "NOAA", "METOP"];
+        var colors = ["blue", "cyan", "lightblue", "darkblue"];
+
+        var trajectory = generatePolarOrbit(
+            Math.random() * 360 - 180,
+            Math.PI / 2,
+            700 + Math.random() * 800,
+            200
+        );
+
+        addSatellite(
+            trajectory,
+            700 + Math.random() * 800,
+            1.0,
+            names[Math.floor(Math.random() * names.length)],
+            colors[Math.floor(Math.random() * colors.length)]
+        );
+    }
+
+    function addInclinedSatellite() {
+        var names = ["Наклонный-1", "Глонасс", "GPS", "Галилео"];
+        var colors = ["purple", "magenta", "darkviolet", "indigo"];
+
+        var trajectory = generateInclinedOrbit(
+            Math.PI/6 + Math.random() * Math.PI/3, // 30-90°
+            Math.random() * 360 - 180,
+            1000 + Math.random() * 30000,
+            150
+        );
+
+        addSatellite(
+            trajectory,
+            1000 + Math.random() * 30000,
+            0.7 + Math.random() * 0.6,
+            names[Math.floor(Math.random() * names.length)],
+            colors[Math.floor(Math.random() * colors.length)]
+        );
+    }
+
+    // Панель управления спутниками
+    Rectangle {
+        anchors.bottom: parent.bottom
+        anchors.right: parent.right
+        anchors.margins: 10
+        width: 220
+        height: 150
+        color: "#E0FFFFFF"
+        opacity: 0.9
+        border.width: 1
+        border.color: "gray"
+        radius: 5
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 4
+
+            Text {
+                text: "Управление спутниками:"
+                font.bold: true
+                font.pixelSize: 12
+                color: "black"
+            }
+
+            Row {
+                spacing: 4
+                Rectangle {
+                    width: 80
+                    height: 28
+                    color: showSatellites ? "lightgreen" : "lightgray"
+                    radius: 4
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: showSatellites ? "Скрыть" : "Показать"
+                        font.pixelSize: 10
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: setSatellitesVisible(!showSatellites)
+                    }
+                }
+
+                Rectangle {
+                    width: 80
+                    height: 28
+                    color: "lightblue"
+                    radius: 4
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Случайный"
+                        font.pixelSize: 9
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: addRandomSatellite()
+                    }
+                }
+            }
+
+            Row {
+                spacing: 4
+                Rectangle {
+                    width: 100
+                    height: 28
+                    color: "#ADD8E6"
+                    radius: 4
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Полярный"
+                        font.pixelSize: 9
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: addPolarSatellite()
+                    }
+                }
+
+                Rectangle {
+                    width: 100
+                    height: 28
+                    color: "#D8BFD8"
+                    radius: 4
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Наклонный"
+                        font.pixelSize: 9
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: addInclinedSatellite()
+                    }
+                }
+            }
+
+            Row {
+                spacing: 4
+                Rectangle {
+                    width: 80
+                    height: 28
+                    color: "orange"
+                    radius: 4
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Демо"
+                        font.pixelSize: 10
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: initializeDemoSatellites()
+                    }
+                }
+
+                Rectangle {
+                    width: 80
+                    height: 28
+                    color: "lightcoral"
+                    radius: 4
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Очистить"
+                        font.pixelSize: 10
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: clearSatellites()
+                    }
+                }
+            }
+
+            Text {
+                text: "Активно: " + satellites.length + " спутников"
+                font.pixelSize: 10
+                color: "darkblue"
+                font.bold: true
+            }
+        }
     }
 
     // Элементы управления с кнопкой перезагрузки конфигурации
@@ -896,5 +1307,14 @@ Item {
             case 2400: return "#FF00FF";
             default: return "lightblue";
         }
+    }
+
+    Component.onCompleted: {
+        console.log("Инициализация с загрузкой из radiation.json...");
+        loadConfigurationFromJson();
+        updateDayNightCycle();
+
+        // Автоматически создаем демо-спутники при загрузке
+        initializeDemoSatellites();
     }
 }

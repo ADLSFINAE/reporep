@@ -6,5 +6,7 @@
         <file>Map/map.qml</file>
         <file>SettingsWindow/solarsystem.qml</file>
         <file>main.qml</file>
+        <file>Map/Items/Satellite.qml</file>
+        <file>Map/Items/TrailPoint.qml</file>
     </qresource>
 </RCC>

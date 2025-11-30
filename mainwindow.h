@@ -70,6 +70,13 @@ private slots:
     void onDateTimeChanged(const QDateTime &dateTime);
     void syncTimeWithSolarSystem();
 
+    // Новые слоты для управления спутниками
+    void onAddSatelliteClicked();
+    void onClearSatellitesClicked();
+    void onToggleSatellitesClicked();
+    void onAddPolarSatelliteClicked();
+    void onAddInclinedSatelliteClicked();
+
     void onMapLoaded();
 
 private:
@@ -95,6 +102,14 @@ private:
     QPushButton *zoomInButton;
     QPushButton *zoomOutButton;
     QPushButton *solarSystemButton;
+
+    // Новые кнопки для управления спутниками
+    QPushButton *addSatelliteButton;
+    QPushButton *clearSatellitesButton;
+    QPushButton *toggleSatellitesButton;
+    QPushButton *addPolarSatelliteButton;
+    QPushButton *addInclinedSatelliteButton;
+
     QSlider *zoomSlider;
     QSlider *radiusSlider;
     QComboBox *mapTypeCombo;
@@ -108,3 +123,6 @@ private:
 };
 
 #endif // MAINWINDOW_H
+
+
+

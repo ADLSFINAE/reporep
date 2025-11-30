@@ -23,6 +23,7 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 DISTFILES += \
     Map/Items/Marker.qml \
     Map/Items/NoiseCircle.qml \
+    Map/Items/Satellite.qml \
     Map/JsonWorker/JsonData.qml \
     Map/map.qml \
     SettingsWindow/solarsystem.qml \

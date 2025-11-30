@@ -162,12 +162,24 @@ void MainWindow::setupUI()
     zoomOutButton = new QPushButton("-", this);
     solarSystemButton = new QPushButton("Солнечная система", this);
 
+    // Новые кнопки для управления спутниками
+    addSatelliteButton = new QPushButton("Добавить спутник", this);
+    clearSatellitesButton = new QPushButton("Очистить спутники", this);
+    toggleSatellitesButton = new QPushButton("Спутники Вкл", this);
+    addPolarSatelliteButton = new QPushButton("Полярный", this);
+    addInclinedSatelliteButton = new QPushButton("Наклонный", this);
+
     zoomInButton->setMaximumWidth(40);
     zoomOutButton->setMaximumWidth(40);
     solarSystemButton->setMaximumWidth(160);
     flyToButton->setMaximumWidth(100);
     addMarkerButton->setMaximumWidth(140);
     clearMarkersButton->setMaximumWidth(140);
+    addSatelliteButton->setMaximumWidth(140);
+    clearSatellitesButton->setMaximumWidth(140);
+    toggleSatellitesButton->setMaximumWidth(120);
+    addPolarSatelliteButton->setMaximumWidth(100);
+    addInclinedSatelliteButton->setMaximumWidth(100);
 
     // Слайдер масштаба
     zoomSlider = new QSlider(Qt::Horizontal, this);
@@ -207,6 +219,14 @@ void MainWindow::setupUI()
     controlLayout->addWidget(zoomInButton);
     controlLayout->addWidget(zoomOutButton);
     controlLayout->addWidget(solarSystemButton);
+
+    // Добавляем кнопки спутников
+    controlLayout->addWidget(addSatelliteButton);
+    controlLayout->addWidget(clearSatellitesButton);
+    controlLayout->addWidget(toggleSatellitesButton);
+    controlLayout->addWidget(addPolarSatelliteButton);
+    controlLayout->addWidget(addInclinedSatelliteButton);
+
     controlLayout->addWidget(zoomSlider);
     controlLayout->addWidget(radiusLabel);
     controlLayout->addWidget(radiusSlider);
@@ -225,6 +245,14 @@ void MainWindow::setupUI()
     connect(zoomInButton, &QPushButton::clicked, this, &MainWindow::onZoomInClicked);
     connect(zoomOutButton, &QPushButton::clicked, this, &MainWindow::onZoomOutClicked);
     connect(solarSystemButton, &QPushButton::clicked, this, &MainWindow::onSolarSystemClicked);
+
+    // Подключение сигналов для спутников
+    connect(addSatelliteButton, &QPushButton::clicked, this, &MainWindow::onAddSatelliteClicked);
+    connect(clearSatellitesButton, &QPushButton::clicked, this, &MainWindow::onClearSatellitesClicked);
+    connect(toggleSatellitesButton, &QPushButton::clicked, this, &MainWindow::onToggleSatellitesClicked);
+    connect(addPolarSatelliteButton, &QPushButton::clicked, this, &MainWindow::onAddPolarSatelliteClicked);
+    connect(addInclinedSatelliteButton, &QPushButton::clicked, this, &MainWindow::onAddInclinedSatelliteClicked);
+
     connect(zoomSlider, &QSlider::valueChanged, this, &MainWindow::onZoomSliderChanged);
     connect(radiusSlider, &QSlider::valueChanged, this, &MainWindow::onAnalysisRadiusChanged);
     connect(radiusSlider, &QSlider::valueChanged, radiusValueLabel, QOverload<int>::of(&QLabel::setNum));
@@ -492,3 +520,45 @@ void MainWindow::onMapTypeChanged(int index)
 
     invokeQMLMethod("setMapType", mapType);
 }
+
+// Методы для управления спутниками
+void MainWindow::onAddSatelliteClicked()
+{
+    invokeQMLMethod("addRandomSatellite");
+    statusBar()->showMessage("Добавлен случайный спутник");
+}
+
+void MainWindow::onClearSatellitesClicked()
+{
+    invokeQMLMethod("clearSatellites");
+    statusBar()->showMessage("Спутники очищены");
+}
+
+void MainWindow::onToggleSatellitesClicked()
+{
+    QVariant result;
+    QMetaObject::invokeMethod(mapWidget->rootObject(), "toggleSatellitesVisibility",
+                             Q_RETURN_ARG(QVariant, result));
+
+    bool visible = result.toBool();
+    statusBar()->showMessage(visible ? "Спутники показаны" : "Спутники скрыты");
+
+    // Обновляем текст кнопки
+    if (toggleSatellitesButton) {
+        toggleSatellitesButton->setText(visible ? "Спутники Выкл" : "Спутники Вкл");
+    }
+}
+
+void MainWindow::onAddPolarSatelliteClicked()
+{
+    invokeQMLMethod("addPolarSatellite");
+    statusBar()->showMessage("Добавлен спутник на полярную орбиту");
+}
+
+void MainWindow::onAddInclinedSatelliteClicked()
+{
+    invokeQMLMethod("addInclinedSatellite");
+    statusBar()->showMessage("Добавлен спутник на наклонную орбиту");
+}
+
+
