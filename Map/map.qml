@@ -3,6 +3,8 @@ import QtQuick.Window 2.12
 import QtLocation 5.12
 import QtPositioning 5.12
 import QtQml 2.12
+import QtQuick.Controls 2.12
+import QtQuick.Layouts 1.12
 
 Item {
     visible: true
@@ -19,6 +21,9 @@ Item {
     property var speedLabels: ["x1", "x2", "x5", "x10", "x60", "x2400"]
     property string configFilePath: "qrc:/radiation.json"
 
+    // Свойство для хранения данных radiation.json
+    property var radiationData: null
+
     // Новые свойства для влияния небесных тел и подсчета дней
     property double celestialInfluence: 1.0
     property double totalInfluence: 1.0
@@ -33,6 +38,14 @@ Item {
     property var satellites: []
     property bool showSatellites: true
     property real dayNightFactor: 1.0
+    property real satelliteTimeFactor: 1.0
+
+    // Свойства для измерений - ТЕПЕРЬ ХРАНИМ ПО СПУТНИКАМ
+    property var measurementsBySatellite: ({}) // Объект: {satelliteName: [measurements]}
+    property var allMeasurements: [] // Все измерения (для статистики)
+    property bool showMeasurementsPanel: false
+    property int selectedSatelliteIndex: -1
+    property string selectedSatelliteName: ""
 
     // Цветовая схема для уровней радиоизлучения
     property var noiseLevels: [
@@ -135,8 +148,6 @@ Item {
                 }
             }
         }
-
-        // Спутники будут добавляться динамически здесь
     }
 
     // Функция для загрузки конфигурации из JSON файла
@@ -150,8 +161,14 @@ Item {
                 if (xhr.status === 200) {
                     try {
                         var config = JSON.parse(xhr.responseText);
+                        radiationData = config; // Сохраняем данные для спутников
                         processJsonConfiguration(config);
                         console.log("JSON успешно загружен из файла");
+
+                        // После загрузки конфигурации можно добавить спутники
+                        if (autoAddSatellitesCheckbox.checked) {
+                            addStaticSatellitesForAllCities();
+                        }
                     } catch (e) {
                         console.log("Ошибка парсинга JSON:", e.toString());
                         loadDemoConfiguration();
@@ -185,7 +202,7 @@ Item {
                 }
 
                 console.log("Успешно создано кругов:", noiseCircles.length);
-                updateConfigInfo("Файл: " + configFilePath + " | Зон: " + noiseCircles.length);
+                updateConfigInfo("Файл: " + configFilePath + " | Зон: " + noiseCircles.length + " | Версия: " + (config.version || "1.0"));
             } else {
                 console.log("Неверный формат JSON конфигурации");
                 loadDemoConfiguration();
@@ -310,7 +327,7 @@ Item {
             }
 
             Text {
-                text: "Спутников: " + satellites.length
+                text: "Спутников: " + satellites.length + " | Измерений: " + allMeasurements.length
                 font.pixelSize: 9
                 color: "red"
                 font.bold: true
@@ -437,6 +454,38 @@ Item {
         updateDayNightCycle();
     }
 
+    // Функция для обновления скорости спутников
+    function updateSatellitesSpeed() {
+        var h = currentTime;
+        var timeFactor;
+
+        // В дневное время спутники могут двигаться немного быстрее
+        // из-за солнечного излучения и термических эффектов
+        if (h >= 6 && h < 18) {
+            // День - небольшое ускорение
+            timeFactor = 1.05;
+        } else if (h >= 4 && h < 6) {
+            // Рассвет - переходный период
+            timeFactor = 1.02;
+        } else if (h >= 18 && h < 20) {
+            // Закат - переходный период
+            timeFactor = 1.02;
+        } else {
+            // Ночь - базовая скорость
+            timeFactor = 1.0;
+        }
+
+        satelliteTimeFactor = timeFactor;
+
+        // Обновляем все спутники
+        for (var i = 0; i < satellites.length; i++) {
+            var satellite = satellites[i];
+            if (satellite && typeof satellite.setGlobalTime === 'function') {
+                satellite.setGlobalTime(currentTime);
+            }
+        }
+    }
+
     function updateDayNightCycle() {
         var h = currentTime;
         var newFactor;
@@ -466,6 +515,9 @@ Item {
 
         // Обновляем подсчет дней на основе общего времени
         updateDaysCounter();
+
+        // ОБНОВЛЯЕМ СКОРОСТЬ СПУТНИКОВ
+        updateSatellitesSpeed();
 
         timeText.text = formatTime(currentTime) + " (" + getTimeOfDay() + ")" + " | День: " + Math.floor(daysFromStart);
         timeText.color = getTimeColor();
@@ -500,10 +552,6 @@ Item {
         // Преобразуем общее время в дни
         daysFromStart = totalTimePassed / 24;
         totalDays = daysFromStart;
-
-        // Отладочная информация
-        // console.log("Time update - Total hours:", totalTimePassed.toFixed(3),
-        //             "Days:", daysFromStart.toFixed(3));
     }
 
     // Упрощенная функция обновления внешнего вида кругов
@@ -757,10 +805,33 @@ Item {
             if (speed) satellite.speed = speed;
             if (name) satellite.satelliteName = name;
             if (color) satellite.satelliteColor = color;
+
+            // Устанавливаем ссылку на карту
+            satellite.mapReference = this;
+
+            // Устанавливаем начальное время
+            satellite.setGlobalTime(currentTime);
+
+            // Подключаем сигнал измерения - ПЕРЕДАЕМ ИМЯ СПУТНИКА В ИЗМЕРЕНИЕ
+            satellite.measurementTaken.connect(function(measurement) {
+                // Добавляем имя спутника в измерение
+                measurement.satelliteName = name;
+                addMeasurement(measurement, name);
+            });
+
             satellite.visible = showSatellites;
             satellites.push(satellite);
             map.addMapItem(satellite);
-            console.log("Добавлен спутник:", name, "с траекторией из", trajectory.length, "точек");
+
+            // Инициализируем хранилище для измерений этого спутника
+            if (!measurementsBySatellite[name]) {
+                measurementsBySatellite[name] = [];
+            }
+
+            // Обновляем селектор спутников
+            updateSatelliteSelector();
+
+            console.log("Добавлен спутник:", name, "высота:", altitude, "км");
             return satellite;
         } else {
             console.log("Ошибка создания спутника:", component.errorString());
@@ -774,6 +845,8 @@ Item {
             satellites[i].destroy();
         }
         satellites = [];
+        measurementsBySatellite = {};
+        allMeasurements = [];
         console.log("Все спутники очищены");
     }
 
@@ -880,7 +953,7 @@ Item {
 
         var trajectory;
         var altitude;
-        var name = names[Math.floor(Math.random() * names.length)];
+        var name = "Случайный-" + (satellites.length + 1);
         var color = colors[Math.floor(Math.random() * colors.length)];
 
         switch(orbitType) {
@@ -931,32 +1004,17 @@ Item {
         // Очищаем существующие спутники
         clearSatellites();
 
-        // Полярные спутники (проходят через полюса)
-        var polarOrbit1 = generatePolarOrbit(30, Math.PI/2, 850, 200);
-        addSatellite(polarOrbit1, 850, 1.0, "Метеор-М1", "blue");
+        // Добавляем статичные спутники
+        if (autoAddSatellitesCheckbox.checked && radiationData) {
+            addStaticSatellitesForAllCities();
+        } else {
+            // Старый код для демо
+            addStaticMoscowSatellite();
+            addStaticSPBSatellite();
+        }
 
-        var polarOrbit2 = generatePolarOrbit(-60, Math.PI/2, 900, 200);
-        addSatellite(polarOrbit2, 900, 1.2, "Канопус-В", "green");
-
-        var polarOrbit3 = generatePolarOrbit(120, Math.PI/2, 800, 200);
-        addSatellite(polarOrbit3, 800, 0.8, "Ресурс-П", "orange");
-
-        // Наклонные орбиты
-        var inclinedOrbit1 = generateInclinedOrbit(Math.PI/3, 0, 20000, 150);
-        addSatellite(inclinedOrbit1, 20000, 0.5, "Глонасс-М", "purple");
-
-        var inclinedOrbit2 = generateInclinedOrbit(Math.PI/4, 90, 1000, 150);
-        addSatellite(inclinedOrbit2, 1000, 1.5, "Ионосфера-М", "cyan");
-
-        // Экваториальная орбита (геостационарная)
-        var equatorialOrbit = generateEquatorialOrbit(0, 35786, 100);
-        addSatellite(equatorialOrbit, 35786, 0.2, "Электро-Л", "red");
-
-        // Орбита Молния (высокоэллиптическая)
-        var molniyaOrbit = generateMolniyaOrbit(Math.PI/3, -90, 120);
-        addSatellite(molniyaOrbit, 40000, 0.3, "Арктика-М", "magenta");
-
-        console.log("Инициализировано демо-спутников:", satellites.length);
+        // Обновляем селектор спутников
+        updateSatelliteSelector();
     }
 
     // Функция для добавления конкретного типа орбиты
@@ -971,11 +1029,12 @@ Item {
             200
         );
 
+        var name = names[Math.floor(Math.random() * names.length)] + "-" + (satellites.length + 1);
         addSatellite(
             trajectory,
             700 + Math.random() * 800,
             1.0,
-            names[Math.floor(Math.random() * names.length)],
+            name,
             colors[Math.floor(Math.random() * colors.length)]
         );
     }
@@ -991,11 +1050,12 @@ Item {
             150
         );
 
+        var name = names[Math.floor(Math.random() * names.length)] + "-" + (satellites.length + 1);
         addSatellite(
             trajectory,
             1000 + Math.random() * 30000,
             0.7 + Math.random() * 0.6,
-            names[Math.floor(Math.random() * names.length)],
+            name,
             colors[Math.floor(Math.random() * colors.length)]
         );
     }
@@ -1005,8 +1065,8 @@ Item {
         anchors.bottom: parent.bottom
         anchors.right: parent.right
         anchors.margins: 10
-        width: 220
-        height: 150
+        width: 260
+        height: 180
         color: "#E0FFFFFF"
         opacity: 0.9
         border.width: 1
@@ -1062,6 +1122,27 @@ Item {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: addRandomSatellite()
+                    }
+                }
+
+                // Кнопка для добавления спутников для всех городов
+                Rectangle {
+                    width: 80
+                    height: 28
+                    color: "#FF00FF"
+                    radius: 4
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "88 городов"
+                        font.pixelSize: 9
+                        font.bold: true
+                        color: "white"
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: addStaticSatellitesForAllCities()
                     }
                 }
             }
@@ -1145,6 +1226,32 @@ Item {
                         anchors.fill: parent
                         onClicked: clearSatellites()
                     }
+                }
+            }
+
+            // Чекбокс для автоматического добавления спутников
+            Row {
+                spacing: 5
+                Rectangle {
+                    width: 16
+                    height: 16
+                    color: autoAddSatellitesCheckbox.checked ? "green" : "lightgray"
+                    border.width: 1
+                    border.color: "gray"
+                    radius: 3
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: autoAddSatellitesCheckbox.checked = !autoAddSatellitesCheckbox.checked
+                    }
+                }
+
+                Text {
+                    id: autoAddSatellitesCheckbox
+                    property bool checked: true
+                    text: "Автоматически добавлять спутники для городов"
+                    font.pixelSize: 9
+                    color: "darkblue"
                 }
             }
 
@@ -1297,6 +1404,360 @@ Item {
         }
     }
 
+    // Панель измерений спутников
+    Rectangle {
+        id: measurementsPanel
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 20
+        anchors.topMargin: 330
+        width: 500
+        height: 460  // Увеличена высота панели до 460
+        color: "#E0FFFFFF"
+        opacity: 0.95
+        border.width: 1
+        border.color: "gray"
+        radius: 5
+        visible: showMeasurementsPanel
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 5
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                Text {
+                    text: "📊 Измерения спутников"
+                    font.bold: true
+                    font.pixelSize: 14
+                    color: "black"
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: "transparent"
+                }
+
+                Text {
+                    text: "✕"
+                    font.pixelSize: 16
+                    color: "red"
+                    font.bold: true
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: showMeasurementsPanel = false
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: "gray"
+            }
+
+            // Селектор спутника
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 5
+
+                Text {
+                    text: "Спутник:"
+                    font.pixelSize: 11
+                    color: "black"
+                }
+
+                ComboBox {
+                    id: satelliteSelector
+                    Layout.fillWidth: true
+                    model: satellites.map(function(sat) {
+                        return sat ? sat.satelliteName : "";
+                    }).filter(function(name) { return name; })
+                    onCurrentIndexChanged: {
+                        selectedSatelliteIndex = currentIndex;
+                        if (currentIndex >= 0 && currentIndex < satellites.length) {
+                            selectedSatelliteName = satellites[currentIndex].satelliteName;
+                        }
+                        updateMeasurementsView();
+                    }
+                }
+
+                Text {
+                    text: "Измерений: " + (selectedSatelliteName ?
+                        (measurementsBySatellite[selectedSatelliteName] ?
+                         measurementsBySatellite[selectedSatelliteName].length : 0) : 0)
+                    font.pixelSize: 10
+                    color: "darkblue"
+                }
+            }
+
+            // Таблица измерений
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                color: "#F8F8F8"
+                border.width: 1
+                border.color: "#CCCCCC"
+                radius: 3
+
+                ListView {
+                    id: measurementsList
+                    anchors.fill: parent
+                    anchors.margins: 2
+                    clip: true
+                    model: ListModel { id: measurementsModel }
+
+                    delegate: Rectangle {
+                        width: measurementsList.width
+                        height: 115  // УВЕЛИЧЕНО до 115 пикселей (было 110)
+                        color: index % 2 === 0 ? "#F0F8FF" : "#FFFFFF"
+                        border.width: 0.5
+                        border.color: "#E0E0E0"
+
+                        Row {
+                            anchors.fill: parent
+                            anchors.margins: 3  // Увеличены отступы до 12px
+                            spacing: 3
+
+                            Column {
+                                width: parent.width * 0.7
+                                spacing: 5  // Увеличен интервал между строками до 5px
+
+                                Text {
+                                    text: model.city
+                                    font.bold: true
+                                    font.pixelSize: 18
+                                    color: getNoiseColor(model.noiseLevel)
+                                    elide: Text.ElideRight
+                                    width: parent.width
+                                    style: Text.Outline
+                                    styleColor: "#80000000"
+                                    height: 25  // Увеличена высота до 25px
+                                }
+
+                                Text {
+                                    text: "Спутник: " + model.satellite
+                                    font.pixelSize: 12
+                                    color: "darkblue"
+                                    height: 19  // Увеличена высота до 19px
+                                }
+
+                                Text {
+                                    text: "Координаты: " + model.lat.toFixed(4) + ", " + model.lng.toFixed(4)
+                                    font.pixelSize: 11
+                                    color: "gray"
+                                    height: 17  // Увеличена высота до 17px
+                                }
+
+                                Text {
+                                    text: "Уровень: " + model.noiseLevel.toFixed(1) + " дБм | Высота: " + model.altitude.toFixed(0) + " км"
+                                    font.pixelSize: 11
+                                    color: "darkblue"
+                                    height: 17  // Увеличена высота до 17px
+                                }
+
+                                Text {
+                                    text: "Время: " + model.time + " | Расстояние: " + (model.distance/1000).toFixed(1) + " км"
+                                    font.pixelSize: 10
+                                    color: "darkgreen"
+                                    height: 16  // Увеличена высота до 16px
+                                }
+                            }
+
+                            Column {
+                                width: parent.width * 0.3
+                                spacing: 6
+
+                                Rectangle {
+                                    width: 75
+                                    height: 30  // Увеличена высота до 30px
+                                    color: getNoiseColor(model.noiseLevel)
+                                    radius: 4
+                                    border.width: 1
+                                    border.color: "white"
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: model.noiseLevel.toFixed(1)
+                                        font.pixelSize: 14
+                                        font.bold: true
+                                        color: "white"
+                                    }
+                                }
+
+                                Text {
+                                    text: "Влияние: " + model.influence.toFixed(2) + "x"
+                                    font.pixelSize: 11
+                                    color: "purple"
+                                    height: 18  // Увеличена высота до 18px
+                                }
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                // Центрируем карту на точке измерения
+                                map.center = QtPositioning.coordinate(model.lat, model.lng);
+                                map.zoomLevel = 12;
+                            }
+                        }
+                    }
+
+                    ScrollBar.vertical: ScrollBar {
+                        policy: ScrollBar.AlwaysOn
+                        width: 12
+                    }
+                }
+            }
+
+            // Панель управления измерениями
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 5
+
+                Rectangle {
+                    width: 100
+                    height: 32
+                    color: "lightcoral"
+                    radius: 3
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Очистить все"
+                        font.pixelSize: 11
+                        color: "white"
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: clearAllMeasurements()
+                    }
+                }
+
+                Rectangle {
+                    width: 100
+                    height: 32
+                    color: "#4CAF50"
+                    radius: 3
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Экспорт CSV"
+                        font.pixelSize: 11
+                        color: "white"
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: exportAllMeasurements()
+                    }
+                }
+
+                Rectangle {
+                    width: 100
+                    height: 32
+                    color: "orange"
+                    radius: 3
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Обновить"
+                        font.pixelSize: 11
+                        color: "white"
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: updateMeasurementsView()
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Всего: " + allMeasurements.length + " измерений"
+                    font.pixelSize: 12
+                    color: "darkblue"
+                    horizontalAlignment: Text.AlignRight
+                }
+            }
+
+            // Статистика
+            Rectangle {
+                Layout.fillWidth: true
+                height: 50  // Увеличена высота до 50px
+                color: "#F0F0F0"
+                radius: 3
+                border.width: 1
+                border.color: "#DDDDDD"
+
+                Row {
+                    anchors.fill: parent
+                    anchors.margins: 5
+                    spacing: 15
+
+                    Text {
+                        text: "🏙️ Городов: " + getUniqueCitiesCount()
+                        font.pixelSize: 11
+                        color: "darkgreen"
+                    }
+
+                    Text {
+                        text: "🛰️ Спутников: " + satellites.length
+                        font.pixelSize: 11
+                        color: "darkred"
+                    }
+
+                    Text {
+                        text: "📈 Макс: " + getMaxNoise().toFixed(1)
+                        font.pixelSize: 11
+                        color: "#FF0000"
+                    }
+
+                    Text {
+                        text: "📉 Мин: " + getMinNoise().toFixed(1)
+                        font.pixelSize: 11
+                        color: "#0000FF"
+                    }
+                }
+            }
+        }
+    }
+
+    // Кнопка для показа/скрытия панели измерений
+    Rectangle {
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 20
+        anchors.topMargin: 330
+        width: 50
+        height: 50
+        color: showMeasurementsPanel ? "#FF4444" : "#44AA44"
+        radius: 25
+        opacity: 0.9
+
+        Text {
+            anchors.centerIn: parent
+            text: showMeasurementsPanel ? "✕" : "📊"
+            font.pixelSize: 22
+            color: "white"
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {
+                showMeasurementsPanel = !showMeasurementsPanel;
+                if (showMeasurementsPanel) {
+                    updateMeasurementsView();
+                }
+            }
+        }
+    }
+
     function getSpeedButtonColor(speed) {
         switch(speed) {
             case 1: return "green";
@@ -1307,6 +1768,403 @@ Item {
             case 2400: return "#FF00FF";
             default: return "lightblue";
         }
+    }
+
+    // Функция для добавления измерения в таблицу (ИЗМЕНЕНА)
+    function addMeasurement(measurement, satelliteName) {
+        if (!satelliteName) {
+            satelliteName = measurement.satelliteName || "Неизвестный спутник";
+        }
+
+        var measurementTime = measurement.measurementTime;
+        var timeStr = measurementTime.getHours().toString().padStart(2, '0') + ":" +
+                      measurementTime.getMinutes().toString().padStart(2, '0') + ":" +
+                      measurementTime.getSeconds().toString().padStart(2, '0');
+
+        // Добавляем в общую статистику
+        var measurementData = {
+            satellite: satelliteName,
+            city: measurement.cityName,
+            lat: measurement.latitude,
+            lng: measurement.longitude,
+            noiseLevel: measurement.noiseLevel,
+            time: timeStr,
+            distance: measurement.distanceToCity || 0,
+            altitude: measurement.altitude || 0,
+            influence: measurement.influenceFactor || 1.0
+        };
+
+        // Сохраняем в глобальный список
+        allMeasurements.push({
+            satellite: satelliteName,
+            city: measurement.cityName,
+            latitude: measurement.latitude,
+            longitude: measurement.longitude,
+            noiseLevel: measurement.noiseLevel,
+            time: measurement.measurementTime.toISOString(),
+            distance: measurement.distanceToCity,
+            altitude: measurement.altitude,
+            influenceFactor: measurement.influenceFactor
+        });
+
+        // Инициализируем массив для спутника, если его нет
+        if (!measurementsBySatellite[satelliteName]) {
+            measurementsBySatellite[satelliteName] = [];
+        }
+
+        // Добавляем измерение в массив спутника
+        measurementsBySatellite[satelliteName].push(measurementData);
+
+        // Ограничиваем количество записей для спутника
+        if (measurementsBySatellite[satelliteName].length > 100) {
+            measurementsBySatellite[satelliteName].shift();
+        }
+
+        // Если панель видна и выбран этот спутник, обновляем отображение
+        if (showMeasurementsPanel && selectedSatelliteName === satelliteName) {
+            updateMeasurementsView();
+        }
+
+        console.log("📡 Измерение от " + satelliteName + ":",
+                    measurement.cityName, measurement.noiseLevel.toFixed(1) + "дБм");
+    }
+
+    // Функция для обновления представления измерений (ИЗМЕНЕНА)
+    function updateMeasurementsView() {
+        measurementsModel.clear();
+
+        if (selectedSatelliteName && measurementsBySatellite[selectedSatelliteName]) {
+            var satMeasurements = measurementsBySatellite[selectedSatelliteName];
+
+            // Показываем последние 50 измерений в обратном порядке (последние сверху)
+            var startIndex = Math.max(0, satMeasurements.length - 50);
+            for (var i = satMeasurements.length - 1; i >= startIndex; i--) {
+                var m = satMeasurements[i];
+                measurementsModel.append(m);
+            }
+        } else {
+            // Показываем все измерения (последние 50)
+            var startIndex = Math.max(0, allMeasurements.length - 50);
+            for (var j = allMeasurements.length - 1; j >= startIndex; j--) {
+                var m2 = allMeasurements[j];
+                var time = new Date(m2.time);
+                var timeStr2 = time.getHours().toString().padStart(2, '0') + ":" +
+                              time.getMinutes().toString().padStart(2, '0') + ":" +
+                              time.getSeconds().toString().padStart(2, '0');
+
+                measurementsModel.append({
+                    satellite: m2.satellite,
+                    city: m2.city,
+                    lat: m2.latitude,
+                    lng: m2.longitude,
+                    noiseLevel: m2.noiseLevel,
+                    time: timeStr2,
+                    distance: m2.distance || 0,
+                    altitude: m2.altitude || 0,
+                    influence: m2.influenceFactor || 1.0
+                });
+            }
+        }
+    }
+
+    // Функция для очистки всех измерений (ИЗМЕНЕНА)
+    function clearAllMeasurements() {
+        measurementsModel.clear();
+        allMeasurements = [];
+        measurementsBySatellite = {};
+
+        // Также очищаем измерения у всех спутников
+        for (var i = 0; i < satellites.length; i++) {
+            if (satellites[i] && typeof satellites[i].clearMeasurements === 'function') {
+                satellites[i].clearMeasurements();
+            }
+        }
+
+        updateStatsDisplay();
+        console.log("Все измерения очищены");
+    }
+
+    // Функция для экспорта всех измерений (ОБНОВЛЕНА)
+    function exportAllMeasurements() {
+        if (allMeasurements.length === 0) {
+            console.log("Нет данных для экспорта");
+            return;
+        }
+
+        var csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "Спутник,Город,Широта,Долгота,Уровень_шума_дБм,Расстояние_до_города_м,Высота_км,Время,Фактор_влияния\n";
+
+        for (var i = 0; i < allMeasurements.length; i++) {
+            var m = allMeasurements[i];
+            csvContent += '"' + m.satellite + '","' + m.city + '",' +
+                         m.latitude + ',' + m.longitude + ',' +
+                         m.noiseLevel.toFixed(1) + ',' +
+                         (m.distance || 0).toFixed(1) + ',' +
+                         (m.altitude || 0).toFixed(1) + ',"' +
+                         m.time + '",' +
+                         (m.influenceFactor || 1.0).toFixed(3) + '\n';
+        }
+
+        var encodedUri = encodeURI(csvContent);
+        var link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "satellite_measurements_" +
+                         new Date().toISOString().slice(0,10) + "_" +
+                         allMeasurements.length + "_records.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        console.log("📤 Экспортировано измерений:", allMeasurements.length);
+    }
+
+    // Функция для экспорта измерений конкретного спутника
+    function exportSatelliteMeasurements(satelliteName) {
+        if (!measurementsBySatellite[satelliteName] || measurementsBySatellite[satelliteName].length === 0) {
+            console.log("Нет данных для спутника", satelliteName);
+            return;
+        }
+
+        var csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "Спутник,Город,Широта,Долгота,Уровень_шума_дБм,Расстояние_до_города_м,Высота_км,Время,Фактор_влияния\n";
+
+        var satMeasurements = measurementsBySatellite[satelliteName];
+        for (var i = 0; i < satMeasurements.length; i++) {
+            var m = satMeasurements[i];
+            csvContent += '"' + m.satellite + '","' + m.city + '",' +
+                         m.lat + ',' + m.lng + ',' +
+                         m.noiseLevel.toFixed(1) + ',' +
+                         (m.distance || 0).toFixed(1) + ',' +
+                         (m.altitude || 0).toFixed(1) + ',"' +
+                         m.time + '",' +
+                         (m.influence || 1.0).toFixed(3) + '\n';
+        }
+
+        var encodedUri = encodeURI(csvContent);
+        var link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "measurements_" + satelliteName.replace(/[^a-z0-9]/gi, '_') + "_" +
+                         new Date().toISOString().slice(0,10) + ".csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        console.log("📤 Экспортировано измерений для спутника", satelliteName + ":", satMeasurements.length);
+    }
+
+    // Функция для получения цвета по уровню шума
+    function getNoiseColor(noiseLevel) {
+        if (noiseLevel > -70) return "#FF0000";
+        if (noiseLevel > -80) return "#FF8800";
+        if (noiseLevel > -90) return "#FFFF00";
+        if (noiseLevel > -100) return "#00FF00";
+        return "#0000FF";
+    }
+
+    // Функция для подсчета уникальных городов
+    function getUniqueCitiesCount() {
+        var cities = new Set();
+        for (var i = 0; i < allMeasurements.length; i++) {
+            if (allMeasurements[i].city !== "Открытая местность") {
+                cities.add(allMeasurements[i].city);
+            }
+        }
+        return cities.size;
+    }
+
+    // Функция для получения максимального уровня шума
+    function getMaxNoise() {
+        if (allMeasurements.length === 0) return -100;
+        var max = -200;
+        for (var i = 0; i < allMeasurements.length; i++) {
+            if (allMeasurements[i].noiseLevel > max) {
+                max = allMeasurements[i].noiseLevel;
+            }
+        }
+        return max;
+    }
+
+    // Функция для получения минимального уровня шума
+    function getMinNoise() {
+        if (allMeasurements.length === 0) return -100;
+        var min = 0;
+        for (var i = 0; i < allMeasurements.length; i++) {
+            if (allMeasurements[i].noiseLevel < min) {
+                min = allMeasurements[i].noiseLevel;
+            }
+        }
+        return min;
+    }
+
+    // Функция для обновления селектора спутников
+    function updateSatelliteSelector() {
+        var names = satellites.map(function(sat) {
+            return sat ? sat.satelliteName : "";
+        }).filter(function(name) { return name; });
+
+        satelliteSelector.model = names;
+
+        if (names.length > 0) {
+            if (selectedSatelliteIndex === -1 || selectedSatelliteIndex >= names.length) {
+                selectedSatelliteIndex = 0;
+                satelliteSelector.currentIndex = 0;
+            }
+            if (selectedSatelliteIndex < satellites.length) {
+                selectedSatelliteName = satellites[selectedSatelliteIndex].satelliteName;
+            }
+        } else {
+            selectedSatelliteIndex = -1;
+            selectedSatelliteName = "";
+        }
+    }
+
+    // ============================================================================
+    // УНИВЕРСАЛЬНЫЕ ФУНКЦИИ ДЛЯ ДОБАВЛЕНИЯ СТАТИЧНЫХ СПУТНИКОВ
+    // ============================================================================
+
+    // Функция для добавления статичных спутников для всех городов из radiation.json
+    function addStaticSatellitesForAllCities() {
+        if (!radiationData || !radiationData.circles) {
+            console.log("Ошибка: Данные radiation.json не загружены");
+            loadConfigurationFromJson();
+            return;
+        }
+
+        var cities = radiationData.circles;
+        var satellitesAdded = 0;
+        var skippedCities = [];
+
+        console.log("Добавление статичных спутников для " + cities.length + " городов...");
+
+        // Проходим по всем городам
+        for (var i = 0; i < cities.length; i++) {
+            var city = cities[i];
+
+            // Пропускаем выключенные города
+            if (!city.enabled) {
+                skippedCities.push(city.id + " (выключен)");
+                continue;
+            }
+
+            // Добавляем спутник для каждого города
+            var satellite = addStaticSatelliteForCity(city);
+            if (satellite) {
+                satellitesAdded++;
+            } else {
+                skippedCities.push(city.id + " (ошибка создания)");
+            }
+        }
+
+        // Обновляем селектор спутников
+        updateSatelliteSelector();
+
+        console.log("✅ Добавлено статичных спутников: " + satellitesAdded +
+                   " из " + cities.length + " городов");
+
+        if (skippedCities.length > 0) {
+            console.log("Пропущенные города:", skippedCities.join(", "));
+        }
+
+        // Обновляем статистику
+        updateStatsDisplay();
+
+        return satellitesAdded;
+    }
+
+    // Функция для добавления статичного спутника для конкретного города
+    // Функция для добавления статичного спутника для конкретного города
+    function addStaticSatelliteForCity(cityData) {
+        var component = Qt.createComponent("qrc:/Map/Items/StaticSatellite.qml");
+
+        if (component.status !== Component.Ready) {
+            console.log("Ошибка создания компонента спутника:", component.errorString());
+            return null;
+        }
+
+        // Создаем спутник
+        var satellite = component.createObject(map);
+
+        // Устанавливаем параметры из данных города
+        satellite.latitude = cityData.latitude;
+        satellite.longitude = cityData.longitude;
+        satellite.altitude = 35786; // Геостационарная орбита
+
+        // Извлекаем название города из полного заголовка
+        var titleParts = cityData.title.split(" - ");
+        var cityName = titleParts[0];
+        var satelliteName = cityName + " Монитор";
+        satellite.satelliteName = satelliteName;
+
+        // ПЕРЕДАЕМ ДАННЫЕ ГОРОДА СПУТНИКУ
+        satellite.setCityData(cityData);
+
+        // Устанавливаем цвет в зависимости от уровня излучения
+        satellite.satelliteColor = getSatelliteColorForNoiseLevel(cityData.baseNoiseLevel);
+        satellite.mapReference = this;
+
+        // Подключаем сигнал измерения
+        satellite.measurementTaken.connect(function(measurement) {
+            // Убедимся, что имя спутника передано
+            measurement.satelliteName = satelliteName;
+            addMeasurement(measurement, satelliteName);
+        });
+
+        satellite.visible = showSatellites;
+        satellites.push(satellite);
+        map.addMapItem(satellite);
+
+        // Инициализируем хранилище для измерений этого спутника
+        if (!measurementsBySatellite[satelliteName]) {
+            measurementsBySatellite[satelliteName] = [];
+        }
+
+        console.log("✅ Добавлен спутник над " + cityName + " (ID: " + cityData.id + ")");
+        return satellite;
+    }
+
+    // Вспомогательная функция для определения цвета спутника по уровню шума
+    function getSatelliteColorForNoiseLevel(noiseLevel) {
+        if (noiseLevel >= -60) return "#FF0000";     // Очень высокий - красный
+        if (noiseLevel >= -70) return "#FF4400";     // Высокий - оранжевый
+        if (noiseLevel >= -80) return "#FF8800";     // Средний - желто-оранжевый
+        return "#FFCC00";                            // Низкий - желтый
+    }
+
+    // Функция для добавления спутника для конкретного города по ID
+    function addStaticSatelliteById(cityId) {
+        if (!radiationData || !radiationData.circles) {
+            console.log("Ошибка: Данные radiation.json не загружены");
+            return null;
+        }
+
+        for (var i = 0; i < radiationData.circles.length; i++) {
+            var city = radiationData.circles[i];
+            if (city.id === cityId) {
+                return addStaticSatelliteForCity(city);
+            }
+        }
+
+        console.log("Город с ID " + cityId + " не найден");
+        return null;
+    }
+
+    // ============================================================================
+    // СТАРЫЕ ФУНКЦИИ (ОСТАВЛЕНЫ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ)
+    // ============================================================================
+
+    // Функция для добавления статичного спутника над Москвой
+    function addStaticMoscowSatellite() {
+        return addStaticSatelliteById("moscow");
+    }
+
+    // Функция для добавления статичного спутника над Санкт-Петербургом
+    function addStaticSPBSatellite() {
+        return addStaticSatelliteById("saint_petersburg");
+    }
+
+    // Функция для обновления статистики
+    function updateStatsDisplay() {
+        // Можно добавить дополнительную логику обновления статистики
     }
 
     Component.onCompleted: {

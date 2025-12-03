@@ -77,6 +77,11 @@ private slots:
     void onAddPolarSatelliteClicked();
     void onAddInclinedSatelliteClicked();
 
+    // Слоты для измерений спутников
+    void toggleMeasurementsPanel();
+    void onExportMeasurementsClicked();
+    void onClearMeasurementsClicked();
+
     void onMapLoaded();
 
 private:
@@ -103,13 +108,6 @@ private:
     QPushButton *zoomOutButton;
     QPushButton *solarSystemButton;
 
-    // Новые кнопки для управления спутниками
-    QPushButton *addSatelliteButton;
-    QPushButton *clearSatellitesButton;
-    QPushButton *toggleSatellitesButton;
-    QPushButton *addPolarSatelliteButton;
-    QPushButton *addInclinedSatelliteButton;
-
     QSlider *zoomSlider;
     QSlider *radiusSlider;
     QComboBox *mapTypeCombo;
@@ -123,6 +121,4 @@ private:
 };
 
 #endif // MAINWINDOW_H
-
-
 

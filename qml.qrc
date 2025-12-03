@@ -8,5 +8,8 @@
         <file>main.qml</file>
         <file>Map/Items/Satellite.qml</file>
         <file>Map/Items/TrailPoint.qml</file>
+        <file>Map/Items/SatelliteMeasurement.qml</file>
+        <file>Map/Items/MeasurementIndicator.qml</file>
+        <file>Map/Items/StaticSatellite.qml</file>
     </qresource>
 </RCC>

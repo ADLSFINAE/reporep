@@ -101,10 +101,10 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , mapWidget(new QQuickWidget(this))
     , solarSystemDialog(new SolarSystemDialog(this))
-    , markerCounter(0)
     , solarInfluence(1.0)
     , lunarInfluence(1.0)
     , planetaryInfluence(1.0)
+    , markerCounter(0)
 {
     setupUI();
     setupMap();
@@ -162,24 +162,12 @@ void MainWindow::setupUI()
     zoomOutButton = new QPushButton("-", this);
     solarSystemButton = new QPushButton("Солнечная система", this);
 
-    // Новые кнопки для управления спутниками
-    addSatelliteButton = new QPushButton("Добавить спутник", this);
-    clearSatellitesButton = new QPushButton("Очистить спутники", this);
-    toggleSatellitesButton = new QPushButton("Спутники Вкл", this);
-    addPolarSatelliteButton = new QPushButton("Полярный", this);
-    addInclinedSatelliteButton = new QPushButton("Наклонный", this);
-
     zoomInButton->setMaximumWidth(40);
     zoomOutButton->setMaximumWidth(40);
     solarSystemButton->setMaximumWidth(160);
     flyToButton->setMaximumWidth(100);
     addMarkerButton->setMaximumWidth(140);
     clearMarkersButton->setMaximumWidth(140);
-    addSatelliteButton->setMaximumWidth(140);
-    clearSatellitesButton->setMaximumWidth(140);
-    toggleSatellitesButton->setMaximumWidth(120);
-    addPolarSatelliteButton->setMaximumWidth(100);
-    addInclinedSatelliteButton->setMaximumWidth(100);
 
     // Слайдер масштаба
     zoomSlider = new QSlider(Qt::Horizontal, this);
@@ -220,13 +208,6 @@ void MainWindow::setupUI()
     controlLayout->addWidget(zoomOutButton);
     controlLayout->addWidget(solarSystemButton);
 
-    // Добавляем кнопки спутников
-    controlLayout->addWidget(addSatelliteButton);
-    controlLayout->addWidget(clearSatellitesButton);
-    controlLayout->addWidget(toggleSatellitesButton);
-    controlLayout->addWidget(addPolarSatelliteButton);
-    controlLayout->addWidget(addInclinedSatelliteButton);
-
     controlLayout->addWidget(zoomSlider);
     controlLayout->addWidget(radiusLabel);
     controlLayout->addWidget(radiusSlider);
@@ -245,13 +226,6 @@ void MainWindow::setupUI()
     connect(zoomInButton, &QPushButton::clicked, this, &MainWindow::onZoomInClicked);
     connect(zoomOutButton, &QPushButton::clicked, this, &MainWindow::onZoomOutClicked);
     connect(solarSystemButton, &QPushButton::clicked, this, &MainWindow::onSolarSystemClicked);
-
-    // Подключение сигналов для спутников
-    connect(addSatelliteButton, &QPushButton::clicked, this, &MainWindow::onAddSatelliteClicked);
-    connect(clearSatellitesButton, &QPushButton::clicked, this, &MainWindow::onClearSatellitesClicked);
-    connect(toggleSatellitesButton, &QPushButton::clicked, this, &MainWindow::onToggleSatellitesClicked);
-    connect(addPolarSatelliteButton, &QPushButton::clicked, this, &MainWindow::onAddPolarSatelliteClicked);
-    connect(addInclinedSatelliteButton, &QPushButton::clicked, this, &MainWindow::onAddInclinedSatelliteClicked);
 
     connect(zoomSlider, &QSlider::valueChanged, this, &MainWindow::onZoomSliderChanged);
     connect(radiusSlider, &QSlider::valueChanged, this, &MainWindow::onAnalysisRadiusChanged);
@@ -542,11 +516,6 @@ void MainWindow::onToggleSatellitesClicked()
 
     bool visible = result.toBool();
     statusBar()->showMessage(visible ? "Спутники показаны" : "Спутники скрыты");
-
-    // Обновляем текст кнопки
-    if (toggleSatellitesButton) {
-        toggleSatellitesButton->setText(visible ? "Спутники Выкл" : "Спутники Вкл");
-    }
 }
 
 void MainWindow::onAddPolarSatelliteClicked()
@@ -561,4 +530,24 @@ void MainWindow::onAddInclinedSatelliteClicked()
     statusBar()->showMessage("Добавлен спутник на наклонную орбиту");
 }
 
+// Методы для управления измерениями
+void MainWindow::toggleMeasurementsPanel()
+{
+    QVariant result;
+    QMetaObject::invokeMethod(mapWidget->rootObject(), "toggleMeasurementsPanel",
+                             Q_RETURN_ARG(QVariant, result));
+    bool visible = result.toBool();
+    statusBar()->showMessage(visible ? "Панель измерений открыта" : "Панель измерений закрыта");
+}
 
+void MainWindow::onExportMeasurementsClicked()
+{
+    invokeQMLMethod("exportAllMeasurements");
+    statusBar()->showMessage("Измерения экспортированы в CSV файл");
+}
+
+void MainWindow::onClearMeasurementsClicked()
+{
+    invokeQMLMethod("clearAllMeasurements");
+    statusBar()->showMessage("Все измерения очищены");
+}
