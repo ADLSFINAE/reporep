@@ -1,8 +1,6 @@
 #include "mainwindow.h"
 #include <QApplication>
 #include <QRandomGenerator>
-#include <QDebug>
-#include <QDateTime>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
@@ -12,6 +10,7 @@
 #include <QComboBox>
 #include <QStatusBar>
 #include <QMessageBox>
+#include <QMetaObject>
 
 // Реализация SolarSystemDialog
 SolarSystemDialog::SolarSystemDialog(QWidget *parent)
@@ -39,11 +38,6 @@ SolarSystemDialog::~SolarSystemDialog()
 {
 }
 
-void SolarSystemDialog::setDateTime(const QDateTime &dateTime)
-{
-    currentDateTime = dateTime;
-}
-
 void SolarSystemDialog::setCurrentTime(double hour, double days)
 {
     if (solarSystemWidget->rootObject()) {
@@ -51,11 +45,6 @@ void SolarSystemDialog::setCurrentTime(double hour, double days)
                                  Q_ARG(QVariant, hour),
                                  Q_ARG(QVariant, days));
     }
-}
-
-QDateTime SolarSystemDialog::getDateTime() const
-{
-    return currentDateTime;
 }
 
 double SolarSystemDialog::getSolarInfluence() const
@@ -91,11 +80,6 @@ double SolarSystemDialog::getPlanetaryInfluence() const
     return 1.0;
 }
 
-void SolarSystemDialog::onDateTimeChanged()
-{
-    emit dateTimeChanged(currentDateTime);
-}
-
 // Основной конструктор MainWindow
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -113,13 +97,16 @@ MainWindow::MainWindow(QWidget *parent)
     setMinimumSize(1200, 900);
     resize(1400, 1000);
 
+    // Устанавливаем фильтр событий для блокировки Ctrl
+    qApp->installEventFilter(this);
+
     connect(solarSystemDialog, &SolarSystemDialog::dateTimeChanged,
             this, &MainWindow::onDateTimeChanged);
 
     // Таймер для постоянной синхронизации времени с solar system
     QTimer *syncTimer = new QTimer(this);
     connect(syncTimer, &QTimer::timeout, this, &MainWindow::syncTimeWithSolarSystem);
-    syncTimer->start(100); // Синхронизация каждые 100 мс
+    syncTimer->start(100);
 }
 
 MainWindow::~MainWindow()
@@ -155,12 +142,12 @@ void MainWindow::setupUI()
     zoomEdit->setMaximumWidth(60);
 
     // Кнопки
-    flyToButton = new QPushButton("Перелететь", this);
-    addMarkerButton = new QPushButton("Добавить маркер", this);
-    clearMarkersButton = new QPushButton("Очистить маркеры", this);
-    zoomInButton = new QPushButton("+", this);
-    zoomOutButton = new QPushButton("-", this);
-    solarSystemButton = new QPushButton("Солнечная система", this);
+    QPushButton *flyToButton = new QPushButton("Перелететь", this);
+    QPushButton *addMarkerButton = new QPushButton("Добавить маркер", this);
+    QPushButton *clearMarkersButton = new QPushButton("Очистить маркеры", this);
+    QPushButton *zoomInButton = new QPushButton("+", this);
+    QPushButton *zoomOutButton = new QPushButton("-", this);
+    QPushButton *solarSystemButton = new QPushButton("Солнечная система", this);
 
     zoomInButton->setMaximumWidth(40);
     zoomOutButton->setMaximumWidth(40);
@@ -222,9 +209,26 @@ void MainWindow::setupUI()
     // Подключение сигналов
     connect(flyToButton, &QPushButton::clicked, this, &MainWindow::onFlyToClicked);
     connect(addMarkerButton, &QPushButton::clicked, this, &MainWindow::onAddMarkerClicked);
-    connect(clearMarkersButton, &QPushButton::clicked, this, &MainWindow::clearMarkers);
-    connect(zoomInButton, &QPushButton::clicked, this, &MainWindow::onZoomInClicked);
-    connect(zoomOutButton, &QPushButton::clicked, this, &MainWindow::onZoomOutClicked);
+    connect(clearMarkersButton, &QPushButton::clicked, this, [this]() {
+        invokeQMLMethod("clearMarkers");
+        markerCounter = 0;
+        statusBar()->showMessage("Маркеры очищены");
+    });
+
+    connect(zoomInButton, &QPushButton::clicked, this, [this]() {
+        int currentZoom = zoomSlider->value();
+        if (currentZoom < zoomSlider->maximum()) {
+            zoomSlider->setValue(currentZoom + 1);
+        }
+    });
+
+    connect(zoomOutButton, &QPushButton::clicked, this, [this]() {
+        int currentZoom = zoomSlider->value();
+        if (currentZoom > zoomSlider->minimum()) {
+            zoomSlider->setValue(currentZoom - 1);
+        }
+    });
+
     connect(solarSystemButton, &QPushButton::clicked, this, &MainWindow::onSolarSystemClicked);
 
     connect(zoomSlider, &QSlider::valueChanged, this, &MainWindow::onZoomSliderChanged);
@@ -282,19 +286,12 @@ bool MainWindow::invokeQMLMethod(const QString &method, const QVariant &arg1,
                                            Q_RETURN_ARG(QVariant, returnedValue));
     }
 
-    if (!success) {
-        qDebug() << "Failed to invoke QML method:" << method;
-    }
-
     return success;
 }
 
 void MainWindow::onMapLoaded()
 {
     statusBar()->showMessage("Карта успешно загружена");
-    qDebug() << "Карта успешно загружена";
-
-    // Синхронизируем время с солнечной системой после загрузки карты
     syncTimeWithSolarSystem();
 }
 
@@ -326,7 +323,15 @@ void MainWindow::onAddMarkerClicked()
         double influencedNoiseLevel = baseNoiseLevel * totalInfluence;
         QString title = QString("Маркер %1").arg(++markerCounter);
 
-        addMarker(lat, lng, title, influencedNoiseLevel);
+        // Создаем объект с данными маркера
+        QVariantMap markerData;
+        markerData["lat"] = lat;
+        markerData["lng"] = lng;
+        markerData["title"] = title;
+        markerData["noiseLevel"] = influencedNoiseLevel;
+
+        invokeQMLMethod("addMarkerWithData", QVariant::fromValue(markerData));
+
         statusBar()->showMessage(QString("Добавлен маркер: %1 (%2 дБм, влияние: %3x)")
                                 .arg(title)
                                 .arg(influencedNoiseLevel, 0, 'f', 1)
@@ -336,55 +341,20 @@ void MainWindow::onAddMarkerClicked()
     }
 }
 
-void MainWindow::addMarker(double lat, double lng, const QString &title, double noiseLevel)
-{
-    // Создаем объект с данными маркера
-    QVariantMap markerData;
-    markerData["lat"] = lat;
-    markerData["lng"] = lng;
-    markerData["title"] = title;
-    markerData["noiseLevel"] = noiseLevel;
-
-    invokeQMLMethod("addMarkerWithData", QVariant::fromValue(markerData));
-}
-
-void MainWindow::clearMarkers()
-{
-    invokeQMLMethod("clearMarkers");
-    markerCounter = 0;
-    statusBar()->showMessage("Маркеры очищены");
-}
-
-void MainWindow::onZoomInClicked()
-{
-    int currentZoom = zoomSlider->value();
-    if (currentZoom < zoomSlider->maximum()) {
-        zoomSlider->setValue(currentZoom + 1);
-    }
-}
-
-void MainWindow::onZoomOutClicked()
-{
-    int currentZoom = zoomSlider->value();
-    if (currentZoom > zoomSlider->minimum()) {
-        zoomSlider->setValue(currentZoom - 1);
-    }
-}
-
 void MainWindow::onSolarSystemClicked()
 {
     solarSystemDialog->show();
     solarSystemDialog->raise();
     solarSystemDialog->activateWindow();
 
-    // Синхронизируем время с основным окном
     syncTimeWithSolarSystem();
-
     statusBar()->showMessage("Открыто окно солнечной системы");
 }
 
 void MainWindow::onDateTimeChanged(const QDateTime &dateTime)
 {
+    Q_UNUSED(dateTime);
+
     // Обновляем влияние небесных тел при изменении даты/времени
     solarInfluence = solarSystemDialog->getSolarInfluence();
     lunarInfluence = solarSystemDialog->getLunarInfluence();
@@ -399,9 +369,6 @@ void MainWindow::onDateTimeChanged(const QDateTime &dateTime)
                             .arg(solarInfluence * lunarInfluence * planetaryInfluence, 0, 'f', 2);
 
     statusBar()->showMessage(influenceText);
-
-    // Обновляем все маркеры с новым влиянием
-    updateAllMarkersWithInfluence();
 }
 
 void MainWindow::updateCelestialInfluence()
@@ -409,20 +376,6 @@ void MainWindow::updateCelestialInfluence()
     // Передаем влияние в QML карту
     double totalInfluence = solarInfluence * lunarInfluence * planetaryInfluence;
     invokeQMLMethod("setCelestialInfluence", totalInfluence);
-
-    qDebug() << "Обновлено влияние небесных тел:"
-             << "Солнце:" << solarInfluence
-             << "Луна:" << lunarInfluence
-             << "Планеты:" << planetaryInfluence
-             << "Общее:" << totalInfluence;
-}
-
-void MainWindow::updateAllMarkersWithInfluence()
-{
-    // Если есть маркеры, обновляем анализ области с новым влиянием
-    if (markerCounter > 0) {
-        invokeQMLMethod("updateAnalysisWithInfluence");
-    }
 }
 
 void MainWindow::syncTimeWithSolarSystem()
@@ -450,22 +403,14 @@ void MainWindow::syncTimeWithSolarSystem()
             lunarInfluence = solarSystemDialog->getLunarInfluence();
             planetaryInfluence = solarSystemDialog->getPlanetaryInfluence();
             updateCelestialInfluence();
-
-            static int syncCounter = 0;
-            if (syncCounter++ % 100 == 0) { // Логируем каждые 10 секунд чтобы не засорять консоль
-                qDebug() << "Синхронизировано время с solar system. Часы:" << actualHour << "Дни:" << actualDays;
-            }
         }
     }
 }
 
 void MainWindow::syncSolarSystemTime(double hour, double days)
 {
-    // Этот метод вызывается из QML solar system для запроса синхронизации
     Q_UNUSED(hour);
     Q_UNUSED(days);
-
-    // Просто вызываем синхронизацию - solar system запросил обновление
     syncTimeWithSolarSystem();
 }
 
@@ -495,59 +440,45 @@ void MainWindow::onMapTypeChanged(int index)
     invokeQMLMethod("setMapType", mapType);
 }
 
-// Методы для управления спутниками
-void MainWindow::onAddSatelliteClicked()
+bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
-    invokeQMLMethod("addRandomSatellite");
-    statusBar()->showMessage("Добавлен случайный спутник");
+    if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
+
+        // Блокируем левый и правый Ctrl
+        if (keyEvent->key() == Qt::Key_Control ||
+            keyEvent->key() == Qt::Key_Meta) { // Meta - это Command на Mac
+            return true; // Блокируем событие
+        }
+
+        // Также блокируем комбинации с Ctrl
+        if (keyEvent->modifiers() & Qt::ControlModifier) {
+            // Разрешаем только стандартные комбинации
+            switch (keyEvent->key()) {
+                case Qt::Key_C: // Ctrl+C
+                case Qt::Key_V: // Ctrl+V
+                case Qt::Key_X: // Ctrl+X
+                case Qt::Key_A: // Ctrl+A
+                case Qt::Key_Z: // Ctrl+Z
+                case Qt::Key_Y: // Ctrl+Y
+                case Qt::Key_S: // Ctrl+S
+                case Qt::Key_O: // Ctrl+O
+                case Qt::Key_P: // Ctrl+P
+                case Qt::Key_Q: // Ctrl+Q
+                case Qt::Key_W: // Ctrl+W
+                case Qt::Key_N: // Ctrl+N
+                case Qt::Key_F: // Ctrl+F
+                    return QMainWindow::eventFilter(obj, event); // Разрешаем
+                default:
+                    // Для всех других комбинаций с Ctrl возвращаем true
+                    // чтобы они не доходили до QML
+                    if (obj == mapWidget || mapWidget->isAncestorOf(qobject_cast<QWidget*>(obj))) {
+                        return true;
+                    }
+            }
+        }
+    }
+
+    return QMainWindow::eventFilter(obj, event);
 }
 
-void MainWindow::onClearSatellitesClicked()
-{
-    invokeQMLMethod("clearSatellites");
-    statusBar()->showMessage("Спутники очищены");
-}
-
-void MainWindow::onToggleSatellitesClicked()
-{
-    QVariant result;
-    QMetaObject::invokeMethod(mapWidget->rootObject(), "toggleSatellitesVisibility",
-                             Q_RETURN_ARG(QVariant, result));
-
-    bool visible = result.toBool();
-    statusBar()->showMessage(visible ? "Спутники показаны" : "Спутники скрыты");
-}
-
-void MainWindow::onAddPolarSatelliteClicked()
-{
-    invokeQMLMethod("addPolarSatellite");
-    statusBar()->showMessage("Добавлен спутник на полярную орбиту");
-}
-
-void MainWindow::onAddInclinedSatelliteClicked()
-{
-    invokeQMLMethod("addInclinedSatellite");
-    statusBar()->showMessage("Добавлен спутник на наклонную орбиту");
-}
-
-// Методы для управления измерениями
-void MainWindow::toggleMeasurementsPanel()
-{
-    QVariant result;
-    QMetaObject::invokeMethod(mapWidget->rootObject(), "toggleMeasurementsPanel",
-                             Q_RETURN_ARG(QVariant, result));
-    bool visible = result.toBool();
-    statusBar()->showMessage(visible ? "Панель измерений открыта" : "Панель измерений закрыта");
-}
-
-void MainWindow::onExportMeasurementsClicked()
-{
-    invokeQMLMethod("exportAllMeasurements");
-    statusBar()->showMessage("Измерения экспортированы в CSV файл");
-}
-
-void MainWindow::onClearMeasurementsClicked()
-{
-    invokeQMLMethod("clearAllMeasurements");
-    statusBar()->showMessage("Все измерения очищены");
-}

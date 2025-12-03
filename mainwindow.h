@@ -29,18 +29,13 @@ public:
     explicit SolarSystemDialog(QWidget *parent = nullptr);
     ~SolarSystemDialog();
 
-    void setDateTime(const QDateTime &dateTime);
     void setCurrentTime(double hour, double days);
-    QDateTime getDateTime() const;
     double getSolarInfluence() const;
     double getLunarInfluence() const;
     double getPlanetaryInfluence() const;
 
 signals:
     void dateTimeChanged(const QDateTime &dateTime);
-
-private slots:
-    void onDateTimeChanged();
 
 private:
     QQuickWidget *solarSystemWidget;
@@ -59,8 +54,6 @@ public slots:
     void syncSolarSystemTime(double hour, double days);
 
 private slots:
-    void onZoomInClicked();
-    void onZoomOutClicked();
     void onFlyToClicked();
     void onAddMarkerClicked();
     void onMapTypeChanged(int index);
@@ -69,30 +62,17 @@ private slots:
     void onSolarSystemClicked();
     void onDateTimeChanged(const QDateTime &dateTime);
     void syncTimeWithSolarSystem();
-
-    // Новые слоты для управления спутниками
-    void onAddSatelliteClicked();
-    void onClearSatellitesClicked();
-    void onToggleSatellitesClicked();
-    void onAddPolarSatelliteClicked();
-    void onAddInclinedSatelliteClicked();
-
-    // Слоты для измерений спутников
-    void toggleMeasurementsPanel();
-    void onExportMeasurementsClicked();
-    void onClearMeasurementsClicked();
-
     void onMapLoaded();
 
 private:
     void setupUI();
     void setupMap();
-    void addMarker(double lat, double lng, const QString &title, double noiseLevel);
-    void clearMarkers();
     bool invokeQMLMethod(const QString &method, const QVariant &arg1 = QVariant(),
                         const QVariant &arg2 = QVariant(), const QVariant &arg3 = QVariant());
     void updateCelestialInfluence();
-    void updateAllMarkersWithInfluence();
+
+    // Добавляем обработку событий клавиатуры
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
     QQuickWidget *mapWidget;
     SolarSystemDialog *solarSystemDialog;
@@ -101,13 +81,6 @@ private:
     QLineEdit *latEdit;
     QLineEdit *lngEdit;
     QLineEdit *zoomEdit;
-    QPushButton *flyToButton;
-    QPushButton *addMarkerButton;
-    QPushButton *clearMarkersButton;
-    QPushButton *zoomInButton;
-    QPushButton *zoomOutButton;
-    QPushButton *solarSystemButton;
-
     QSlider *zoomSlider;
     QSlider *radiusSlider;
     QComboBox *mapTypeCombo;
@@ -121,4 +94,3 @@ private:
 };
 
 #endif // MAINWINDOW_H
-
