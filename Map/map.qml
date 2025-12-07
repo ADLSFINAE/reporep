@@ -1792,8 +1792,29 @@ Item {
             satelliteName = measurement.satelliteName || "Неизвестный спутник";
         }
 
-        var measurementTime = measurement.measurementTime;
-        var timeStr = measurementTime.toISOString();
+        // 1. Получаем время из симуляции
+        var simTime = currentTime; // например, 6.5 для 6:30
+        var hours = Math.floor(simTime);
+        var minutes = Math.round((simTime % 1) * 60);
+
+        // 2. Используем начало симуляции + прошедшие дни
+        var simDate = new Date(startDate);
+        simDate.setDate(simDate.getDate() + Math.floor(daysFromStart));
+        simDate.setHours(hours);
+        simDate.setMinutes(minutes);
+        simDate.setSeconds(0);
+
+        // 3. Форматируем для отображения в QML
+        var timeStrForDisplay = hours.toString().padStart(2, '0') + ":" +
+                               minutes.toString().padStart(2, '0');
+
+        // 4. Форматируем для C++ (ISO формат)
+        var year = simDate.getFullYear();
+        var month = (simDate.getMonth() + 1).toString().padStart(2, '0');
+        var day = simDate.getDate().toString().padStart(2, '0');
+        var timeStrForCpp = year + "-" + month + "-" + day + "T" +
+                           hours.toString().padStart(2, '0') + ":" +
+                           minutes.toString().padStart(2, '0') + ":00";
 
         // Сохраняем в QML для отображения
         var measurementData = {
@@ -1802,7 +1823,8 @@ Item {
             lat: measurement.latitude,
             lng: measurement.longitude,
             noiseLevel: measurement.noiseLevel,
-            time: timeStr,
+            time: timeStrForDisplay, // Только часы:минуты для отображения
+            dateTime: timeStrForCpp, // Полная дата для C++
             distance: measurement.distanceToCity || 0,
             altitude: measurement.altitude || 0,
             influence: measurement.influenceFactor || 1.0
@@ -1819,16 +1841,11 @@ Item {
         // Добавляем измерение в массив спутника
         measurementsBySatellite[satelliteName].push(measurementData);
 
-        // Ограничиваем количество записей для спутника
-        if (measurementsBySatellite[satelliteName].length > 100) {
-            measurementsBySatellite[satelliteName].shift();
-        }
-
-        // ПЕРЕДАЕМ ДАННЫЕ В C++ DataStorage
+        // ПЕРЕДАЕМ ДАННЫЕ В C++ DataStorage (ТОЛЬКО ВРЕМЯ СИМУЛЯЦИИ!)
         if (dataStorage) {
             dataStorage.addMeasurement(
                 satelliteName,
-                timeStr,
+                timeStrForCpp, // Полная дата-время из симуляции
                 measurement.latitude,
                 measurement.longitude,
                 measurement.noiseLevel,
@@ -1837,15 +1854,19 @@ Item {
                 measurement.distanceToCity || 0,
                 measurement.influenceFactor || 1.0
             );
+
+            console.log("📡 Измерение передано в C++ из симуляции:");
+            console.log("   Спутник:", satelliteName);
+            console.log("   Время симуляции:", timeStrForDisplay);
+            console.log("   Дата симуляции:", year + "-" + month + "-" + day);
+            console.log("   Уровень:", measurement.noiseLevel.toFixed(1) + "дБм");
+            console.log("   Город:", measurement.cityName);
         }
 
         // Если панель видна и выбран этот спутник, обновляем отображение
         if (showMeasurementsPanel && selectedSatelliteName === satelliteName) {
             updateMeasurementsView();
         }
-
-        console.log("📡 Измерение от " + satelliteName + ":",
-                    measurement.cityName, measurement.noiseLevel.toFixed(1) + "дБм");
     }
 
     // Функция для обновления представления измерений
@@ -1859,31 +1880,81 @@ Item {
             var startIndex = Math.max(0, satMeasurements.length - 50);
             for (var i = satMeasurements.length - 1; i >= startIndex; i--) {
                 var m = satMeasurements[i];
-                measurementsModel.append(m);
+                measurementsModel.append({
+                    satellite: m.satellite,
+                    city: m.city,
+                    lat: m.lat,
+                    lng: m.lng,
+                    noiseLevel: m.noiseLevel,
+                    time: m.time, // Только время для отображения
+                    distance: m.distance || 0,
+                    altitude: m.altitude || 0,
+                    influence: m.influence || 1.0
+                });
             }
         } else {
             // Показываем все измерения (последние 50)
             var startIndex = Math.max(0, allMeasurements.length - 50);
             for (var j = allMeasurements.length - 1; j >= startIndex; j--) {
                 var m2 = allMeasurements[j];
-                var time = new Date(m2.time);
-                var timeStr2 = time.getHours().toString().padStart(2, '0') + ":" +
-                              time.getMinutes().toString().padStart(2, '0') + ":" +
-                              time.getSeconds().toString().padStart(2, '0');
-
                 measurementsModel.append({
                     satellite: m2.satellite,
                     city: m2.city,
                     lat: m2.lat,
                     lng: m2.lng,
                     noiseLevel: m2.noiseLevel,
-                    time: timeStr2,
+                    time: m2.time, // Только время для отображения
                     distance: m2.distance || 0,
                     altitude: m2.altitude || 0,
                     influence: m2.influence || 1.0
                 });
             }
         }
+    }
+
+    // Добавьте эту функцию для получения полной даты-времени симуляции
+    function getFullSimulationDateTime() {
+        // Текущее время симуляции
+        var simTime = currentTime;
+        var hours = Math.floor(simTime);
+        var minutes = Math.round((simTime % 1) * 60);
+
+        // Начальная дата симуляции
+        var simDate = new Date(startDate);
+
+        // Добавляем прошедшие дни
+        simDate.setDate(simDate.getDate() + Math.floor(daysFromStart));
+
+        // Устанавливаем время
+        simDate.setHours(hours);
+        simDate.setMinutes(minutes);
+        simDate.setSeconds(0);
+
+        // Форматируем в строку для C++
+        var year = simDate.getFullYear();
+        var month = (simDate.getMonth() + 1).toString().padStart(2, '0');
+        var day = simDate.getDate().toString().padStart(2, '0');
+        var hourStr = hours.toString().padStart(2, '0');
+        var minuteStr = minutes.toString().padStart(2, '0');
+
+        return year + "-" + month + "-" + day + "T" + hourStr + ":" + minuteStr + ":00";
+    }
+
+    // Использование в спутнике:
+    // В Satellite.qml или StaticSatellite.qml при создании измерения:
+    function takeMeasurement(cityData) {
+        var measurement = {
+            latitude: cityData.latitude,
+            longitude: cityData.longitude,
+            noiseLevel: calculatedNoise,
+            cityName: cityData.title,
+            altitude: this.altitude,
+            distanceToCity: calculatedDistance,
+            influenceFactor: influence
+        };
+
+        // Передаем в map.qml, который добавит время симуляции
+        measurementTaken(measurement);
     }
 
     // Функция для очистки всех измерений

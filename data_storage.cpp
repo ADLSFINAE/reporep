@@ -53,7 +53,37 @@ void DataStorage::addMeasurement(const QString &satelliteName,
     }
 
     SatelliteMeasurementData data;
+
+    // ПРОСТОЙ ПАРСИНГ - Ожидаем формат "2025-01-01T06:30:00"
     data.measurementTime = QDateTime::fromString(dateTime, Qt::ISODate);
+
+    // Если время не парсится, логируем ошибку
+    if (!data.measurementTime.isValid()) {
+        qDebug() << "⚠️ Время из симуляции не распарсилось:" << dateTime;
+        qDebug() << "   Использую текущую дату с временем по умолчанию";
+
+        // Используем текущую дату, но время из строки если возможно
+        QDate today = QDate::currentDate();
+        QString timePart = dateTime;
+
+        // Пытаемся извлечь время если есть
+        if (dateTime.contains('T')) {
+            QStringList parts = dateTime.split('T');
+            if (parts.size() > 1) {
+                timePart = parts[1];
+            }
+        }
+
+        // Собираем дату-время заново
+        QString newDateTime = today.toString("yyyy-MM-dd") + "T" + timePart;
+        data.measurementTime = QDateTime::fromString(newDateTime, Qt::ISODate);
+
+        // Если все равно не работает, используем текущее время
+        if (!data.measurementTime.isValid()) {
+            data.measurementTime = QDateTime::currentDateTime();
+        }
+    }
+
     data.coordinate = qMakePair(latitude, longitude);
     data.radiationValue = radiationValue;
     data.cityName = cityName;
@@ -64,21 +94,21 @@ void DataStorage::addMeasurement(const QString &satelliteName,
     // Добавляем в map
     measurementsMap[satelliteName].append(data);
 
-    qDebug() << "Добавлено измерение для спутника:" << satelliteName
-             << "время:" << dateTime
-             << "координаты:" << latitude << longitude
-             << "значение:" << radiationValue;
+    qDebug() << "✅ Добавлено измерение ИЗ СИМУЛЯЦИИ:";
+    qDebug() << "   Спутник:" << satelliteName;
+    qDebug() << "   Время симуляции:" << data.measurementTime.toString("yyyy-MM-dd HH:mm:ss");
+    qDebug() << "   Координаты:" << latitude << longitude;
+    qDebug() << "   Излучение:" << radiationValue << "дБм";
+    qDebug() << "   Город:" << cityName;
+    qDebug() << "   Высота:" << altitude << "км";
 
     emit dataAdded(satelliteName, measurementsMap[satelliteName].size());
-
-    for(auto& elem :  measurementsMap.keys()){
-        qDebug()<<elem;
-    }
 
     // Обновляем статистику
     QVariantMap stats = getStatistics();
     emit statisticsUpdated(stats);
 }
+
 
 // Добавление измерения с объектом данных
 void DataStorage::addMeasurementData(const QString &satelliteName,
@@ -96,6 +126,12 @@ void DataStorage::addMeasurementData(const QString &satelliteName,
              << "значение:" << data.radiationValue;
 
     emit dataAdded(satelliteName, measurementsMap[satelliteName].size());
+
+    for(auto& elem : measurementsMap.keys()){
+        for(auto& elem2 : measurementsMap[elem]){
+            qDebug()<<elem2.measurementTime;
+        }
+    }
 
     // Обновляем статистику
     QVariantMap stats = getStatistics();

@@ -62,10 +62,12 @@ private slots:
     void onExportDataClicked();
     void onExportImageClicked();
     void dataAdded(const QString &satelliteName, int totalCount);
+    void satelliteAdded(const QString &satelliteName);  // Новый слот!
 
 private:
     void setupUI();
     void loadSatelliteList();
+    void updateSatelliteListItem(const QString &satelliteName);  // Новая функция!
     void updateChart(const QString &satelliteName);
     void updateStatistics(const QString &satelliteName);
 

@@ -55,7 +55,7 @@ void SimpleChartWidget::paintEvent(QPaintEvent *event)
     // Задний фон
     painter.fillRect(rect(), QColor(255, 255, 255));
 
-    if (m_times.isEmpty() || m_values.isEmpty()) {
+    if (m_times.isEmpty() || m_values.isEmpty() || m_times.size() != m_values.size()) {
         painter.setPen(QColor(100, 100, 100));
         painter.setFont(QFont("Arial", 14));
         painter.drawText(rect(), Qt::AlignCenter, "Нет данных для отображения");
@@ -82,8 +82,15 @@ void SimpleChartWidget::drawChart(QPainter &painter)
     QRect chartRect = rect().adjusted(80, 50, -40, -80);
 
     drawGrid(painter, chartRect);
-    drawLine(painter, chartRect);
+
+    // Сначала рисуем точки (для одного измерения)
     drawPoints(painter, chartRect);
+
+    // Затем рисуем линию (только если есть хотя бы 2 измерения)
+    if (m_times.size() >= 2) {
+        drawLine(painter, chartRect);
+    }
+
     drawAxes(painter, chartRect);
 }
 
@@ -108,7 +115,10 @@ void SimpleChartWidget::drawGrid(QPainter &painter, const QRect &chartRect)
 
 void SimpleChartWidget::drawLine(QPainter &painter, const QRect &chartRect)
 {
-    if (m_times.size() < 2) return;
+    // Проверяем, что есть хотя бы 2 точки
+    if (m_times.size() < 2) {
+        return;
+    }
 
     double minValue = findMinValue();
     double maxValue = findMaxValue();
@@ -150,25 +160,41 @@ void SimpleChartWidget::drawPoints(QPainter &painter, const QRect &chartRect)
     double valueRange = maxValue - minValue;
     if (valueRange == 0) valueRange = 1;
 
-    qint64 minTime = m_times.first().toMSecsSinceEpoch();
-    qint64 maxTime = m_times.last().toMSecsSinceEpoch();
-    qint64 timeRange = maxTime - minTime;
-    if (timeRange == 0) timeRange = 1;
+    qint64 minTime, maxTime, timeRange;
+
+    // Определяем диапазон времени
+    if (m_times.size() == 1) {
+        minTime = m_times.first().toMSecsSinceEpoch();
+        maxTime = minTime + 24 * 60 * 60 * 1000; // 1 день для одной точки
+        timeRange = maxTime - minTime;
+    } else {
+        minTime = m_times.first().toMSecsSinceEpoch();
+        maxTime = m_times.last().toMSecsSinceEpoch();
+        timeRange = maxTime - minTime;
+        if (timeRange == 0) timeRange = 1;
+    }
 
     painter.setBrush(QColor(255, 50, 50));
     painter.setPen(QPen(QColor(200, 0, 0), 1));
 
     for (int i = 0; i < m_times.size(); i++) {
-        int x = chartRect.left() + chartRect.width() *
+        // Для одной точки размещаем ее в начале диапазона (не в середине!)
+        int x;
+        if (m_times.size() == 1) {
+            x = chartRect.left(); // Размещаем в начале оси X
+        } else {
+            x = chartRect.left() + chartRect.width() *
                 (m_times[i].toMSecsSinceEpoch() - minTime) / timeRange;
+        }
+
         int y = chartRect.bottom() - chartRect.height() *
                 (m_values[i] - minValue) / valueRange;
 
         // Рисуем точку с обводкой
         painter.drawEllipse(QPoint(x, y), 5, 5);
 
-        // Подписи значений для некоторых точек (каждой 5-й)
-        if (i % 5 == 0) {
+        // Подписи значений для всех точек, если их мало
+        if (m_times.size() <= 10 || i % 5 == 0) {
             painter.save();
             painter.setPen(QColor(0, 0, 0));
             painter.setFont(QFont("Arial", 8));
@@ -180,7 +206,6 @@ void SimpleChartWidget::drawPoints(QPainter &painter, const QRect &chartRect)
         }
     }
 }
-
 void SimpleChartWidget::drawAxes(QPainter &painter, const QRect &chartRect)
 {
     painter.setPen(QPen(Qt::black, 2));
@@ -200,6 +225,13 @@ void SimpleChartWidget::drawAxes(QPainter &painter, const QRect &chartRect)
     double minValue = findMinValue();
     double maxValue = findMaxValue();
     double valueRange = maxValue - minValue;
+
+    // Для одной точки делаем небольшой диапазон
+    if (minValue == maxValue) {
+        minValue -= 1.0;
+        maxValue += 1.0;
+        valueRange = 2.0;
+    }
 
     // Рисуем 5 делений на оси Y
     for (int i = 0; i <= 5; i++) {
@@ -228,27 +260,64 @@ void SimpleChartWidget::drawAxes(QPainter &painter, const QRect &chartRect)
 
     // Подписи оси X (время)
     if (!m_times.isEmpty()) {
-        // Рисуем 5 делений на оси X
-        for (int i = 0; i <= 5; i++) {
-            int idx = m_times.size() * i / 5;
-            if (idx >= m_times.size()) idx = m_times.size() - 1;
+        qint64 minTime, maxTime, timeRange;
 
-            qint64 minTime = m_times.first().toMSecsSinceEpoch();
-            qint64 maxTime = m_times.last().toMSecsSinceEpoch();
-            qint64 timeRange = maxTime - minTime;
+        if (m_times.size() == 1) {
+            minTime = m_times.first().toMSecsSinceEpoch();
+            maxTime = minTime + 24 * 60 * 60 * 1000; // Добавляем 1 день для одной точки
+            timeRange = maxTime - minTime;
 
-            int x = chartRect.left() + chartRect.width() *
-                    (m_times[idx].toMSecsSinceEpoch() - minTime) / timeRange;
+            // Для одной точки создаем 3 метки: начало, середина и конец диапазона
+            for (int i = 0; i <= 2; i++) {
+                qint64 currentTime = minTime + (timeRange * i / 2);
+                QDateTime timeLabel = QDateTime::fromMSecsSinceEpoch(currentTime);
 
-            // Вертикальная черточка на оси
-            painter.setPen(QPen(Qt::black, 1));
-            painter.drawLine(x, chartRect.bottom(), x, chartRect.bottom() + 5);
+                int x = chartRect.left() + chartRect.width() * i / 2;
 
-            // Подпись времени
-            painter.setPen(QColor(100, 100, 100));
-            QString label = m_times[idx].toString("dd.MM.yy\nHH:mm");
-            QRect labelRect(x - 40, chartRect.bottom() + 10, 80, 40);
-            painter.drawText(labelRect, Qt::AlignCenter, label);
+                // Вертикальная черточка на оси
+                painter.setPen(QPen(Qt::black, 1));
+                painter.drawLine(x, chartRect.bottom(), x, chartRect.bottom() + 5);
+
+                // Подпись времени
+                painter.setPen(QColor(100, 100, 100));
+                QString label;
+                if (i == 0) {
+                    label = timeLabel.toString("dd.MM.yyyy\nHH:mm:ss");
+                } else if (i == 2) {
+                    label = timeLabel.toString("dd.MM.yyyy\nHH:mm:ss");
+                } else {
+                    label = timeLabel.toString("HH:mm:ss");
+                }
+
+                QRect labelRect(x - 40, chartRect.bottom() + 10, 80, 40);
+                painter.drawText(labelRect, Qt::AlignCenter, label);
+            }
+        } else {
+            minTime = m_times.first().toMSecsSinceEpoch();
+            maxTime = m_times.last().toMSecsSinceEpoch();
+            timeRange = maxTime - minTime;
+            if (timeRange == 0) timeRange = 1;
+
+            // Рисуем до 5 делений на оси X
+            int steps = qMin(5, m_times.size());
+            for (int i = 0; i <= steps; i++) {
+                int idx = m_times.size() * i / steps;
+                if (idx >= m_times.size()) idx = m_times.size() - 1;
+
+                int x = chartRect.left() + chartRect.width() *
+                        (m_times[idx].toMSecsSinceEpoch() - minTime) / timeRange;
+
+                // Вертикальная черточка на оси
+                painter.setPen(QPen(Qt::black, 1));
+                painter.drawLine(x, chartRect.bottom(), x, chartRect.bottom() + 5);
+
+                // Подпись времени
+                painter.setPen(QColor(100, 100, 100));
+                QString label = m_times[idx].toString("dd.MM.yy\nHH:mm");
+
+                QRect labelRect(x - 40, chartRect.bottom() + 10, 80, 40);
+                painter.drawText(labelRect, Qt::AlignCenter, label);
+            }
         }
 
         // Название оси X
@@ -296,7 +365,10 @@ void SimpleChartWindow::setupUI()
 
     connect(exportImageBtn, &QPushButton::clicked, this, &SimpleChartWindow::onExportImageClicked);
     connect(exportDataBtn, &QPushButton::clicked, this, &SimpleChartWindow::onExportDataClicked);
+
+    // Подключаем сигналы от DataStorage
     connect(m_dataStorage, &DataStorage::dataAdded, this, &SimpleChartWindow::dataAdded);
+    connect(m_dataStorage, &DataStorage::satelliteAdded, this, &SimpleChartWindow::satelliteAdded);
 
     controlLayout->addWidget(titleLabel);
     controlLayout->addStretch();
@@ -361,13 +433,34 @@ void SimpleChartWindow::loadSatelliteList()
     qDebug() << "Загружаются спутники:" << satellites;
 
     foreach (const QString &satellite, satellites) {
-        int count = m_dataStorage->getMeasurementCount(satellite);
-        QListWidgetItem *item = new QListWidgetItem(
-            QString("%1 (%2 измерений)").arg(satellite).arg(count)
-        );
-        item->setData(Qt::UserRole, satellite);
-        m_satelliteList->addItem(item);
+        updateSatelliteListItem(satellite);
     }
+}
+
+void SimpleChartWindow::updateSatelliteListItem(const QString &satelliteName)
+{
+    if (!m_dataStorage) return;
+
+    int count = m_dataStorage->getMeasurementCount(satelliteName);
+
+    // Проверяем, существует ли уже элемент с этим спутником
+    for (int i = 0; i < m_satelliteList->count(); ++i) {
+        QListWidgetItem *item = m_satelliteList->item(i);
+        if (item && item->data(Qt::UserRole).toString() == satelliteName) {
+            // Обновляем существующий элемент
+            item->setText(QString("%1 (%2 измерений)").arg(satelliteName).arg(count));
+            qDebug() << "Обновлен спутник:" << satelliteName << "измерений:" << count;
+            return;
+        }
+    }
+
+    // Добавляем новый элемент, если его нет
+    QListWidgetItem *item = new QListWidgetItem(
+        QString("%1 (%2 измерений)").arg(satelliteName).arg(count)
+    );
+    item->setData(Qt::UserRole, satelliteName);
+    m_satelliteList->addItem(item);
+    qDebug() << "Добавлен новый спутник в список:" << satelliteName << "измерений:" << count;
 }
 
 void SimpleChartWindow::onSatelliteSelected(QListWidgetItem *item)
@@ -408,26 +501,50 @@ void SimpleChartWindow::updateChart(const QString &satelliteName)
 
     foreach (const QVariant &item, measurements) {
         QVariantMap map = item.toMap();
-        times.append(QDateTime::fromString(map["time"].toString(), "yyyy-MM-dd HH:mm:ss"));
+        QString timeStr = map["time"].toString();
+        QDateTime time = QDateTime::fromString(timeStr, "yyyy-MM-dd HH:mm:ss");
+
+        if (!time.isValid()) {
+            // Пробуем другой формат
+            time = QDateTime::fromString(timeStr, Qt::ISODate);
+            if (!time.isValid()) {
+                qDebug() << "Неверный формат времени:" << timeStr;
+                continue;
+            }
+        }
+
+        times.append(time);
         values.append(map["radiation"].toDouble());
     }
 
-    // Сортируем по времени
-    QVector<int> indices(times.size());
-    std::iota(indices.begin(), indices.end(), 0);
-    std::sort(indices.begin(), indices.end(),
-              [&times](int a, int b) { return times[a] < times[b]; });
-
-    QVector<QDateTime> sortedTimes;
-    QVector<double> sortedValues;
-
-    for (int idx : indices) {
-        sortedTimes.append(times[idx]);
-        sortedValues.append(values[idx]);
+    // Проверяем, что есть данные для отображения
+    if (times.isEmpty() || values.isEmpty() || times.size() != values.size()) {
+        m_chartWidget->setTitle("Нет данных для отображения");
+        m_chartWidget->clearData();
+        return;
     }
 
-    m_chartWidget->setTitle(QString("Спутник: %1").arg(satelliteName));
-    m_chartWidget->setData(sortedTimes, sortedValues);
+    // Сортируем по времени (только если есть более 1 измерения)
+    if (times.size() > 1) {
+        QVector<int> indices(times.size());
+        std::iota(indices.begin(), indices.end(), 0);
+        std::sort(indices.begin(), indices.end(),
+                  [&times](int a, int b) { return times[a] < times[b]; });
+
+        QVector<QDateTime> sortedTimes;
+        QVector<double> sortedValues;
+
+        for (int idx : indices) {
+            sortedTimes.append(times[idx]);
+            sortedValues.append(values[idx]);
+        }
+
+        times = sortedTimes;
+        values = sortedValues;
+    }
+
+    m_chartWidget->setTitle(QString("Спутник: %1 (%2 измерений)").arg(satelliteName).arg(times.size()));
+    m_chartWidget->setData(times, values);
 }
 
 void SimpleChartWindow::updateStatistics(const QString &satelliteName)
@@ -450,12 +567,24 @@ void SimpleChartWindow::updateStatistics(const QString &satelliteName)
     foreach (const QVariant &item, measurements) {
         QVariantMap map = item.toMap();
         double value = map["radiation"].toDouble();
-        QDateTime time = QDateTime::fromString(map["time"].toString(), "yyyy-MM-dd HH:mm:ss");
+        QString timeStr = map["time"].toString();
+        QDateTime time = QDateTime::fromString(timeStr, "yyyy-MM-dd HH:mm:ss");
+
+        if (!time.isValid()) {
+            time = QDateTime::fromString(timeStr, Qt::ISODate);
+        }
 
         values.append(value);
 
-        if (firstTime.isNull() || time < firstTime) firstTime = time;
-        if (lastTime.isNull() || time > lastTime) lastTime = time;
+        if (time.isValid()) {
+            if (firstTime.isNull() || time < firstTime) firstTime = time;
+            if (lastTime.isNull() || time > lastTime) lastTime = time;
+        }
+    }
+
+    if (values.isEmpty()) {
+        m_statsTable->clearContents();
+        return;
     }
 
     // Вычисляем статистику
@@ -467,11 +596,16 @@ void SimpleChartWindow::updateStatistics(const QString &satelliteName)
     m_currentStats.mean = sum / values.size();
 
     // Медиана
-    std::sort(values.begin(), values.end());
-    if (values.size() % 2 == 0) {
-        m_currentStats.median = (values[values.size()/2 - 1] + values[values.size()/2]) / 2.0;
+    if (values.size() >= 2) {
+        QVector<double> sortedValues = values;
+        std::sort(sortedValues.begin(), sortedValues.end());
+        if (sortedValues.size() % 2 == 0) {
+            m_currentStats.median = (sortedValues[sortedValues.size()/2 - 1] + sortedValues[sortedValues.size()/2]) / 2.0;
+        } else {
+            m_currentStats.median = sortedValues[sortedValues.size()/2];
+        }
     } else {
-        m_currentStats.median = values[values.size()/2];
+        m_currentStats.median = values.first();
     }
 
     m_currentStats.firstMeasurement = firstTime;
@@ -480,17 +614,27 @@ void SimpleChartWindow::updateStatistics(const QString &satelliteName)
     // Обновляем таблицу
     m_statsTable->clearContents();
 
+    QString firstTimeStr = m_currentStats.firstMeasurement.isValid()
+        ? m_currentStats.firstMeasurement.toString("dd.MM.yyyy HH:mm")
+        : "Н/Д";
+
+    QString lastTimeStr = m_currentStats.lastMeasurement.isValid()
+        ? m_currentStats.lastMeasurement.toString("dd.MM.yyyy HH:mm")
+        : "Н/Д";
+
+    int daysDiff = m_currentStats.firstMeasurement.isValid() && m_currentStats.lastMeasurement.isValid()
+        ? m_currentStats.firstMeasurement.daysTo(m_currentStats.lastMeasurement)
+        : 0;
+
     QStringList statsData = {
         QString("Количество измерений: %1").arg(m_currentStats.count),
-        QString("Временной диапазон: %1 - %2")
-            .arg(m_currentStats.firstMeasurement.toString("dd.MM.yyyy HH:mm"))
-            .arg(m_currentStats.lastMeasurement.toString("dd.MM.yyyy HH:mm")),
+        QString("Временной диапазон: %1 - %2").arg(firstTimeStr).arg(lastTimeStr),
         QString("Минимальное значение: %1 дБм").arg(m_currentStats.min, 0, 'f', 1),
         QString("Максимальное значение: %1 дБм").arg(m_currentStats.max, 0, 'f', 1),
         QString("Среднее значение: %1 дБм").arg(m_currentStats.mean, 0, 'f', 1),
         QString("Медиана: %1 дБм").arg(m_currentStats.median, 0, 'f', 1),
         QString("Размах значений: %1 дБм").arg(m_currentStats.max - m_currentStats.min, 0, 'f', 1),
-        QString("Всего дней измерений: %1").arg(m_currentStats.firstMeasurement.daysTo(m_currentStats.lastMeasurement))
+        QString("Всего дней измерений: %1").arg(daysDiff)
     };
 
     for (int i = 0; i < statsData.size() && i < m_statsTable->rowCount(); ++i) {
@@ -526,7 +670,25 @@ void SimpleChartWindow::onExportImageClicked()
 
 void SimpleChartWindow::dataAdded(const QString &satelliteName, int totalCount)
 {
-    loadSatelliteList();
+    qDebug() << "Получен сигнал dataAdded для спутника:" << satelliteName << "всего измерений:" << totalCount;
+
+    // Обновляем только элемент этого спутника, не перезагружая весь список
+    updateSatelliteListItem(satelliteName);
+
+    // Если этот спутник сейчас выбран, обновляем график
+    QList<QListWidgetItem*> selectedItems = m_satelliteList->selectedItems();
+    if (!selectedItems.isEmpty() && selectedItems.first()->data(Qt::UserRole).toString() == satelliteName) {
+        updateChart(satelliteName);
+        updateStatistics(satelliteName);
+    }
+}
+
+void SimpleChartWindow::satelliteAdded(const QString &satelliteName)
+{
+    qDebug() << "Получен сигнал satelliteAdded для спутника:" << satelliteName;
+
+    // Добавляем новый спутник в список
+    updateSatelliteListItem(satelliteName);
 }
 
 void SimpleChartWindow::onExportDataClicked()
