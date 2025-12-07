@@ -335,13 +335,6 @@ Item {
                 color: "red"
                 font.bold: true
             }
-
-            Text {
-                text: "Данные в C++: " + (dataStorage ? dataStorage.getAllMeasurements().length : 0) + " записей"
-                font.pixelSize: 9
-                color: "darkblue"
-                font.bold: true
-            }
         }
     }
 
@@ -1269,13 +1262,6 @@ Item {
                     font.pixelSize: 9
                     color: "darkblue"
                 }
-            }
-
-            Text {
-                text: "Активно: " + satellites.length + " спутников"
-                font.pixelSize: 10
-                color: "darkblue"
-                font.bold: true
             }
         }
     }

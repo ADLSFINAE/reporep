@@ -490,4 +490,3 @@ MapQuickItem {
         clearMeasurements();
     }
 }
-

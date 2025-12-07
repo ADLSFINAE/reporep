@@ -93,7 +93,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupUI();
     setupMap();
 
-    setWindowTitle("Мониторинг зашумленности радиоэфира - Оффлайн Карта");
+    setWindowTitle("RSPACER ALPHA v1");
     setMinimumSize(1200, 900);
     resize(1400, 1000);
 
@@ -152,12 +152,9 @@ void MainWindow::setupUI()
     // Кнопки
     QPushButton *flyToButton = new QPushButton("Перелететь", this);
     QPushButton *addMarkerButton = new QPushButton("Добавить маркер", this);
-    QPushButton *clearMarkersButton = new QPushButton("Очистить маркеры", this);
     QPushButton *zoomInButton = new QPushButton("+", this);
     QPushButton *zoomOutButton = new QPushButton("-", this);
     QPushButton *solarSystemButton = new QPushButton("Солнечная система", this);
-    QPushButton *exportDataButton = new QPushButton("Экспорт данных", this);
-    QPushButton *statsButton = new QPushButton("Статистика", this);
     QPushButton *chartsButton = new QPushButton("Графики и аналитика", this);
 
     // Настройка размеров кнопок
@@ -166,16 +163,7 @@ void MainWindow::setupUI()
     solarSystemButton->setMaximumWidth(160);
     flyToButton->setMaximumWidth(100);
     addMarkerButton->setMaximumWidth(140);
-    clearMarkersButton->setMaximumWidth(140);
-    exportDataButton->setMaximumWidth(120);
-    statsButton->setMaximumWidth(100);
     chartsButton->setMaximumWidth(150);
-
-    // Слайдер масштаба
-    zoomSlider = new QSlider(Qt::Horizontal, this);
-    zoomSlider->setRange(1, 20);
-    zoomSlider->setValue(10);
-    zoomSlider->setMaximumWidth(200);
 
     // Слайдер радиуса анализа
     QLabel *radiusLabel = new QLabel("Радиус (м):", this);
@@ -205,15 +193,11 @@ void MainWindow::setupUI()
     controlLayout->addWidget(zoomEdit);
     controlLayout->addWidget(flyToButton);
     controlLayout->addWidget(addMarkerButton);
-    controlLayout->addWidget(clearMarkersButton);
     controlLayout->addWidget(zoomInButton);
     controlLayout->addWidget(zoomOutButton);
     controlLayout->addWidget(solarSystemButton);
-    controlLayout->addWidget(exportDataButton);
-    controlLayout->addWidget(statsButton);
     controlLayout->addWidget(chartsButton);
 
-    controlLayout->addWidget(zoomSlider);
     controlLayout->addWidget(radiusLabel);
     controlLayout->addWidget(radiusSlider);
     controlLayout->addWidget(radiusValueLabel);
@@ -227,32 +211,10 @@ void MainWindow::setupUI()
     // Подключение сигналов
     connect(flyToButton, &QPushButton::clicked, this, &MainWindow::onFlyToClicked);
     connect(addMarkerButton, &QPushButton::clicked, this, &MainWindow::onAddMarkerClicked);
-    connect(clearMarkersButton, &QPushButton::clicked, this, [this]() {
-        invokeQMLMethod("clearMarkers");
-        markerCounter = 0;
-        statusBar()->showMessage("Маркеры очищены");
-    });
-
-    connect(zoomInButton, &QPushButton::clicked, this, [this]() {
-        int currentZoom = zoomSlider->value();
-        if (currentZoom < zoomSlider->maximum()) {
-            zoomSlider->setValue(currentZoom + 1);
-        }
-    });
-
-    connect(zoomOutButton, &QPushButton::clicked, this, [this]() {
-        int currentZoom = zoomSlider->value();
-        if (currentZoom > zoomSlider->minimum()) {
-            zoomSlider->setValue(currentZoom - 1);
-        }
-    });
 
     connect(solarSystemButton, &QPushButton::clicked, this, &MainWindow::onSolarSystemClicked);
-    connect(exportDataButton, &QPushButton::clicked, this, &MainWindow::onExportDataClicked);
-    connect(statsButton, &QPushButton::clicked, this, &MainWindow::showDataStatistics);
     connect(chartsButton, &QPushButton::clicked, this, &MainWindow::onShowChartsClicked);
 
-    connect(zoomSlider, &QSlider::valueChanged, this, &MainWindow::onZoomSliderChanged);
     connect(radiusSlider, &QSlider::valueChanged, this, &MainWindow::onAnalysisRadiusChanged);
     connect(radiusSlider, &QSlider::valueChanged, radiusValueLabel, QOverload<int>::of(&QLabel::setNum));
     connect(mapTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),

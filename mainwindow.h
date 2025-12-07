@@ -97,7 +97,6 @@ private:
     QLineEdit *latEdit;
     QLineEdit *lngEdit;
     QLineEdit *zoomEdit;
-    QSlider *zoomSlider;
     QSlider *radiusSlider;
     QComboBox *mapTypeCombo;
 
