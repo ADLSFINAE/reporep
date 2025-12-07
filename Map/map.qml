@@ -47,6 +47,9 @@ Item {
     property int selectedSatelliteIndex: -1
     property string selectedSatelliteName: ""
 
+    // Связь с DataStorage из C++
+    property var dataStorage: null
+
     // Цветовая схема для уровней радиоизлучения
     property var noiseLevels: [
         { range: "≥ -60 дБм", color: "#FF0000", description: "Очень высокий", level: -55 },
@@ -330,6 +333,13 @@ Item {
                 text: "Спутников: " + satellites.length + " | Измерений: " + allMeasurements.length
                 font.pixelSize: 9
                 color: "red"
+                font.bold: true
+            }
+
+            Text {
+                text: "Данные в C++: " + (dataStorage ? dataStorage.getAllMeasurements().length : 0) + " записей"
+                font.pixelSize: 9
+                color: "darkblue"
                 font.bold: true
             }
         }
@@ -812,7 +822,7 @@ Item {
             // Устанавливаем начальное время
             satellite.setGlobalTime(currentTime);
 
-            // Подключаем сигнал измерения - ПЕРЕДАЕМ ИМЯ СПУТНИКА В ИЗМЕРЕНИЕ
+            // Подключаем сигнал измерения
             satellite.measurementTaken.connect(function(measurement) {
                 // Добавляем имя спутника в измерение
                 measurement.satelliteName = name;
@@ -847,6 +857,12 @@ Item {
         satellites = [];
         measurementsBySatellite = {};
         allMeasurements = [];
+
+        // Очищаем данные в C++ хранилище
+        if (dataStorage) {
+            dataStorage.clearAllData();
+        }
+
         console.log("Все спутники очищены");
     }
 
@@ -1770,18 +1786,16 @@ Item {
         }
     }
 
-    // Функция для добавления измерения в таблицу (ИЗМЕНЕНА)
+    // Функция для добавления измерения в таблицу
     function addMeasurement(measurement, satelliteName) {
         if (!satelliteName) {
             satelliteName = measurement.satelliteName || "Неизвестный спутник";
         }
 
         var measurementTime = measurement.measurementTime;
-        var timeStr = measurementTime.getHours().toString().padStart(2, '0') + ":" +
-                      measurementTime.getMinutes().toString().padStart(2, '0') + ":" +
-                      measurementTime.getSeconds().toString().padStart(2, '0');
+        var timeStr = measurementTime.toISOString();
 
-        // Добавляем в общую статистику
+        // Сохраняем в QML для отображения
         var measurementData = {
             satellite: satelliteName,
             city: measurement.cityName,
@@ -1794,18 +1808,8 @@ Item {
             influence: measurement.influenceFactor || 1.0
         };
 
-        // Сохраняем в глобальный список
-        allMeasurements.push({
-            satellite: satelliteName,
-            city: measurement.cityName,
-            latitude: measurement.latitude,
-            longitude: measurement.longitude,
-            noiseLevel: measurement.noiseLevel,
-            time: measurement.measurementTime.toISOString(),
-            distance: measurement.distanceToCity,
-            altitude: measurement.altitude,
-            influenceFactor: measurement.influenceFactor
-        });
+        // Добавляем в глобальный список
+        allMeasurements.push(measurementData);
 
         // Инициализируем массив для спутника, если его нет
         if (!measurementsBySatellite[satelliteName]) {
@@ -1820,6 +1824,21 @@ Item {
             measurementsBySatellite[satelliteName].shift();
         }
 
+        // ПЕРЕДАЕМ ДАННЫЕ В C++ DataStorage
+        if (dataStorage) {
+            dataStorage.addMeasurement(
+                satelliteName,
+                timeStr,
+                measurement.latitude,
+                measurement.longitude,
+                measurement.noiseLevel,
+                measurement.cityName,
+                measurement.altitude || 0,
+                measurement.distanceToCity || 0,
+                measurement.influenceFactor || 1.0
+            );
+        }
+
         // Если панель видна и выбран этот спутник, обновляем отображение
         if (showMeasurementsPanel && selectedSatelliteName === satelliteName) {
             updateMeasurementsView();
@@ -1829,7 +1848,7 @@ Item {
                     measurement.cityName, measurement.noiseLevel.toFixed(1) + "дБм");
     }
 
-    // Функция для обновления представления измерений (ИЗМЕНЕНА)
+    // Функция для обновления представления измерений
     function updateMeasurementsView() {
         measurementsModel.clear();
 
@@ -1855,23 +1874,28 @@ Item {
                 measurementsModel.append({
                     satellite: m2.satellite,
                     city: m2.city,
-                    lat: m2.latitude,
-                    lng: m2.longitude,
+                    lat: m2.lat,
+                    lng: m2.lng,
                     noiseLevel: m2.noiseLevel,
                     time: timeStr2,
                     distance: m2.distance || 0,
                     altitude: m2.altitude || 0,
-                    influence: m2.influenceFactor || 1.0
+                    influence: m2.influence || 1.0
                 });
             }
         }
     }
 
-    // Функция для очистки всех измерений (ИЗМЕНЕНА)
+    // Функция для очистки всех измерений
     function clearAllMeasurements() {
         measurementsModel.clear();
         allMeasurements = [];
         measurementsBySatellite = {};
+
+        // Очищаем данные в C++ хранилище
+        if (dataStorage) {
+            dataStorage.clearAllData();
+        }
 
         // Также очищаем измерения у всех спутников
         for (var i = 0; i < satellites.length; i++) {
@@ -1884,25 +1908,53 @@ Item {
         console.log("Все измерения очищены");
     }
 
-    // Функция для экспорта всех измерений (ОБНОВЛЕНА)
+    // Функция для экспорта всех измерений через C++
     function exportAllMeasurements() {
         if (allMeasurements.length === 0) {
             console.log("Нет данных для экспорта");
             return;
         }
 
-        var csvContent = "data:text/csv;charset=utf-8,";
-        csvContent += "Спутник,Город,Широта,Долгота,Уровень_шума_дБм,Расстояние_до_города_м,Высота_км,Время,Фактор_влияния\n";
+        if (dataStorage) {
+            var filename = "satellite_measurements_" +
+                          new Date().toISOString().slice(0,10).replace(/-/g, '') + "_" +
+                          allMeasurements.length + "_records.csv";
+
+            if (dataStorage.exportToCSV(filename)) {
+                console.log("📤 Экспортировано через C++:", allMeasurements.length, "измерений");
+            } else {
+                console.log("Ошибка экспорта через C++");
+            }
+        } else {
+            console.log("DataStorage не доступен");
+            // Резервный экспорт через JavaScript
+            exportAllMeasurementsJS();
+        }
+    }
+
+    // Резервная функция экспорта через JavaScript
+    function exportAllMeasurementsJS() {
+        if (allMeasurements.length === 0) {
+            console.log("Нет данных для экспорта");
+            return;
+        }
+
+        var csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // BOM для UTF-8
+        csvContent += "Спутник;Время;Широта;Долгота;Уровень излучения (дБм);Город;Высота (км);Расстояние до города (м);Фактор влияния\n";
 
         for (var i = 0; i < allMeasurements.length; i++) {
             var m = allMeasurements[i];
-            csvContent += '"' + m.satellite + '","' + m.city + '",' +
-                         m.latitude + ',' + m.longitude + ',' +
-                         m.noiseLevel.toFixed(1) + ',' +
-                         (m.distance || 0).toFixed(1) + ',' +
-                         (m.altitude || 0).toFixed(1) + ',"' +
-                         m.time + '",' +
-                         (m.influenceFactor || 1.0).toFixed(3) + '\n';
+            var time = new Date(m.time);
+            var timeStr = time.toISOString().replace('T', ' ').substr(0, 19);
+
+            csvContent += '"' + m.satellite + '";"' +
+                         timeStr + '";' +
+                         m.lat + ';' + m.lng + ';' +
+                         m.noiseLevel.toFixed(1) + ';"' +
+                         m.city + '";' +
+                         (m.altitude || 0).toFixed(1) + ';' +
+                         (m.distance || 0).toFixed(1) + ';' +
+                         (m.influence || 1.0).toFixed(3) + '\n';
         }
 
         var encodedUri = encodeURI(csvContent);
@@ -1915,41 +1967,7 @@ Item {
         link.click();
         document.body.removeChild(link);
 
-        console.log("📤 Экспортировано измерений:", allMeasurements.length);
-    }
-
-    // Функция для экспорта измерений конкретного спутника
-    function exportSatelliteMeasurements(satelliteName) {
-        if (!measurementsBySatellite[satelliteName] || measurementsBySatellite[satelliteName].length === 0) {
-            console.log("Нет данных для спутника", satelliteName);
-            return;
-        }
-
-        var csvContent = "data:text/csv;charset=utf-8,";
-        csvContent += "Спутник,Город,Широта,Долгота,Уровень_шума_дБм,Расстояние_до_города_м,Высота_км,Время,Фактор_влияния\n";
-
-        var satMeasurements = measurementsBySatellite[satelliteName];
-        for (var i = 0; i < satMeasurements.length; i++) {
-            var m = satMeasurements[i];
-            csvContent += '"' + m.satellite + '","' + m.city + '",' +
-                         m.lat + ',' + m.lng + ',' +
-                         m.noiseLevel.toFixed(1) + ',' +
-                         (m.distance || 0).toFixed(1) + ',' +
-                         (m.altitude || 0).toFixed(1) + ',"' +
-                         m.time + '",' +
-                         (m.influence || 1.0).toFixed(3) + '\n';
-        }
-
-        var encodedUri = encodeURI(csvContent);
-        var link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", "measurements_" + satelliteName.replace(/[^a-z0-9]/gi, '_') + "_" +
-                         new Date().toISOString().slice(0,10) + ".csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        console.log("📤 Экспортировано измерений для спутника", satelliteName + ":", satMeasurements.length);
+        console.log("📤 Экспортировано измерений (JS):", allMeasurements.length);
     }
 
     // Функция для получения цвета по уровню шума
@@ -2071,7 +2089,44 @@ Item {
         return satellitesAdded;
     }
 
-    // Функция для добавления статичного спутника для конкретного города
+    // Функция для получения DataStorage - чтобы спутники могли получить доступ
+    function getDataStorage() {
+        return dataStorage;
+    }
+
+    // Функция для передачи DataStorage спутникам
+    function passDataStorageToSatellites() {
+        console.log("🔄 Передача DataStorage всем спутникам...");
+        console.log("   Всего спутников:", satellites.length);
+        console.log("   dataStorage доступен:", dataStorage !== null);
+
+        var successCount = 0;
+        var failCount = 0;
+
+        for (var i = 0; i < satellites.length; i++) {
+            var satellite = satellites[i];
+            if (satellite && dataStorage) {
+                if (typeof satellite.setDataStorage === 'function') {
+                    satellite.setDataStorage(dataStorage);
+                    successCount++;
+                    console.log("   ✅ DataStorage передан спутнику:", satellite.satelliteName);
+                } else {
+                    failCount++;
+                    console.log("   ❌ Спутник не имеет метода setDataStorage:", satellite.satelliteName);
+                }
+            } else {
+                failCount++;
+                console.log("   ❌ Спутник или dataStorage недоступны:",
+                           satellite ? satellite.satelliteName : "null",
+                           dataStorage ? "dataStorage OK" : "dataStorage null");
+            }
+        }
+
+        console.log("📊 Итог передачи DataStorage:");
+        console.log("   Успешно:", successCount);
+        console.log("   Неудачно:", failCount);
+    }
+
     // Функция для добавления статичного спутника для конкретного города
     function addStaticSatelliteForCity(cityData) {
         var component = Qt.createComponent("qrc:/Map/Items/StaticSatellite.qml");
@@ -2101,6 +2156,28 @@ Item {
         // Устанавливаем цвет в зависимости от уровня излучения
         satellite.satelliteColor = getSatelliteColorForNoiseLevel(cityData.baseNoiseLevel);
         satellite.mapReference = this;
+
+        // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Передаем dataStorage прямо в спутник
+        console.log("🔄 Передача DataStorage спутнику:", satelliteName);
+        console.log("   dataStorage доступен:", dataStorage !== null);
+
+        if (dataStorage && typeof satellite.setDataStorage === 'function') {
+            satellite.setDataStorage(dataStorage);
+            console.log("✅ DataStorage передан статичному спутнику:", satelliteName);
+
+            // Тестируем соединение
+            try {
+                if (typeof dataStorage.testConnection === 'function') {
+                    dataStorage.testConnection();
+                }
+            } catch (e) {
+                console.log("⚠️ Ошибка тестирования DataStorage:", e);
+            }
+        } else {
+            console.log("❌ Не удалось передать DataStorage спутнику:", satelliteName);
+            console.log("   dataStorage:", dataStorage ? "доступен" : "null");
+            console.log("   setDataStorage метод:", typeof satellite.setDataStorage === 'function' ? "доступен" : "недоступен");
+        }
 
         // Подключаем сигнал измерения
         satellite.measurementTaken.connect(function(measurement) {
@@ -2165,14 +2242,45 @@ Item {
     // Функция для обновления статистики
     function updateStatsDisplay() {
         // Можно добавить дополнительную логику обновления статистики
+        if (dataStorage) {
+            var stats = dataStorage.getStatistics();
+            console.log("Статистика данных в C++:", JSON.stringify(stats));
+        }
     }
 
     Component.onCompleted: {
         console.log("Инициализация с загрузкой из radiation.json...");
+
+        // Проверяем доступность DataStorage при запуске
+        console.log("dataStorage доступен из QML:", dataStorage !== null);
+
+        if (dataStorage) {
+            console.log("✅ DataStorage доступен из QML");
+            console.log("Данных в хранилище:", dataStorage.getAllMeasurements().length);
+
+            // Тестируем методы
+            try {
+                if (typeof dataStorage.testConnection === 'function') {
+                    dataStorage.testConnection();
+                }
+                console.log("getAllSatelliteNames доступен:", typeof dataStorage.getAllSatelliteNames === 'function');
+                console.log("getTotalMeasurementCount доступен:", typeof dataStorage.getTotalMeasurementCount === 'function');
+            } catch (e) {
+                console.log("⚠️ Ошибка тестирования методов:", e);
+            }
+        } else {
+            console.log("❌ DataStorage НЕ доступен из QML - проверьте передачу из C++");
+        }
+
         loadConfigurationFromJson();
         updateDayNightCycle();
 
         // Автоматически создаем демо-спутники при загрузке
         initializeDemoSatellites();
+
+        // После добавления спутников передаем им DataStorage
+        Qt.callLater(function() {
+            passDataStorageToSatellites();
+        });
     }
 }

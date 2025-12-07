@@ -263,7 +263,10 @@ MapQuickItem {
 
     // Функция для выполнения измерения
     function takeMeasurement() {
-        if (!mapReference) return;
+        if (!mapReference) {
+            console.log("Ошибка: mapReference не установлен");
+            return;
+        }
 
         var measurement = Qt.createQmlObject('
             import QtQuick 2.12;
@@ -487,6 +490,4 @@ MapQuickItem {
         clearMeasurements();
     }
 }
-
-
 

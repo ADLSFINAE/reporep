@@ -25,6 +25,9 @@ MapQuickItem {
     property var measurements: []
     property int maxMeasurements: 50
 
+    // Связь с DataStorage из C++
+    property var dataStorage: null
+
     coordinate: QtPositioning.coordinate(latitude, longitude)
 
     anchorPoint.x: satelliteIcon.width / 2
@@ -84,6 +87,33 @@ MapQuickItem {
         }
     }
 
+    // НОВЫЙ ФУНКЦИОНАЛ: Функция для установки DataStorage
+    function setDataStorage(storage) {
+        console.log("📡 StaticSatellite.setDataStorage вызван:",
+                   storage !== null ? "✅ storage доступен" : "❌ storage null");
+        dataStorage = storage;
+
+        // Тестируем соединение
+        if (dataStorage) {
+            try {
+                console.log("🔍 Тестируем методы dataStorage...");
+                // Проверяем доступные методы
+                console.log(" - addMeasurement доступен:", typeof dataStorage.addMeasurement === 'function');
+                console.log(" - testConnection доступен:", typeof dataStorage.testConnection === 'function');
+
+                if (typeof dataStorage.testConnection === 'function') {
+                    dataStorage.testConnection();
+                }
+
+                console.log("✅ StaticSatellite получил DataStorage для", satelliteName);
+            } catch (e) {
+                console.log("⚠️ Ошибка теста DataStorage:", e);
+            }
+        } else {
+            console.log("❌ StaticSatellite: DataStorage не установлен для", satelliteName);
+        }
+    }
+
     Timer {
         id: measurementTimer
         interval: 1000 // Обновление каждую секунду
@@ -101,18 +131,23 @@ MapQuickItem {
     signal measurementTaken(var measurement)
 
     function takeCityMeasurement() {
-        if (!mapReference) return;
+        if (!mapReference) {
+            console.log("Ошибка: mapReference не установлен");
+            return;
+        }
 
-        var measurement = Qt.createQmlObject('
-            import QtQuick 2.12;
-            SatelliteMeasurement {}
-        ', this);
-
-        measurement.satelliteName = satelliteName;
-        measurement.latitude = latitude;
-        measurement.longitude = longitude;
-        measurement.altitude = altitude;
-        measurement.measurementTime = new Date();
+        // Создаем объект измерения
+        var measurement = {
+            satelliteName: satelliteName,
+            latitude: latitude,
+            longitude: longitude,
+            altitude: altitude,
+            measurementTime: new Date(),
+            influenceFactor: 1.0,
+            cityName: "",
+            distanceToCity: 0,
+            noiseLevel: baseNoiseLevel
+        };
 
         // Получаем влияние небесных тел
         var celestialInfluence = mapReference.celestialInfluence || 1.0;
@@ -125,7 +160,6 @@ MapQuickItem {
         } else if (cityName && cityName !== "") {
             measurement.cityName = cityName;
         } else {
-            // Если данные о городе не установлены, используем координаты
             measurement.cityName = "Координаты: " + latitude.toFixed(4) + ", " + longitude.toFixed(4);
         }
 
@@ -135,26 +169,74 @@ MapQuickItem {
         var timeOfDayVariation = calculateTimeOfDayVariation();
         var randomVariation = (Math.random() * 4) - 2; // ±2 дБм случайная вариация
 
-        measurement.noiseLevel = baseNoiseLevel + timeOfDayVariation + randomVariation;
+        var noiseLevel = baseNoiseLevel + timeOfDayVariation + randomVariation;
 
         // Учитываем влияние небесных тел
-        measurement.noiseLevel *= measurement.influenceFactor;
+        measurement.noiseLevel = noiseLevel * measurement.influenceFactor;
 
-        measurements.unshift(measurement); // Добавляем в начало
-
-        // Ограничиваем количество сохраненных измерений
-        if (measurements.length > maxMeasurements) {
-            measurements.pop().destroy();
+        // Корректируем значение
+        if (measurement.noiseLevel > -50) {
+            measurement.noiseLevel = -50 + (Math.random() * 5);
         }
 
         // Сигнализируем о новом измерении
         measurementTaken(measurement);
 
+        // ПЕРЕДАЕМ ДАННЫЕ В C++ DataStorage
+        transferMeasurementToCpp(measurement);
+
         // Обновляем кружок города в реальном времени
         updateCityNoiseCircle(measurement.noiseLevel);
 
-        console.log("📡 Статичный спутник:", satelliteName,
-                    measurement.cityName, measurement.noiseLevel.toFixed(1) + "дБм");
+        console.log("📡 StaticSatellite:", satelliteName,
+                    measurement.cityName, measurement.noiseLevel.toFixed(1) + "дБм",
+                    "влияние:", measurement.influenceFactor.toFixed(2) + "x");
+    }
+
+    // Функция для передачи измерения в C++ DataStorage
+    function transferMeasurementToCpp(measurement) {
+        // Сначала используем локальное свойство dataStorage
+        var storage = dataStorage;
+
+        // Если не установлено, пробуем получить из mapReference
+        if (!storage && mapReference) {
+            if (typeof mapReference.getDataStorage === 'function') {
+                storage = mapReference.getDataStorage();
+            } else if (mapReference.dataStorage) {
+                storage = mapReference.dataStorage;
+            }
+        }
+
+        // Пробуем глобальный доступ
+        if (!storage && typeof dataStorageManager !== 'undefined') {
+            storage = dataStorageManager;
+        }
+
+        if (storage && typeof storage.addMeasurement === 'function') {
+            try {
+                var timeStr = measurement.measurementTime.toISOString();
+
+                storage.addMeasurement(
+                    measurement.satelliteName,
+                    timeStr,
+                    measurement.latitude,
+                    measurement.longitude,
+                    measurement.noiseLevel,
+                    measurement.cityName,
+                    measurement.altitude || 0,
+                    measurement.distanceToCity || 0,
+                    measurement.influenceFactor || 1.0
+                );
+
+                console.log("✅ Данные переданы в C++ от спутника:", measurement.satelliteName);
+            } catch (e) {
+                console.log("❌ Ошибка передачи в C++:", e);
+            }
+        } else {
+            console.log("⚠️ DataStorage не доступен для статичного спутника:", satelliteName);
+            console.log("   storage:", storage);
+            console.log("   addMeasurement доступен:", storage ? typeof storage.addMeasurement === 'function' : "storage null");
+        }
     }
 
     function calculateTimeFactor() {
@@ -163,16 +245,12 @@ MapQuickItem {
         var timeFactor;
 
         if (h >= 6 && h < 18) {
-            // День - повышенный уровень из-за активности
             timeFactor = 1.15;
         } else if (h >= 4 && h < 6) {
-            // Рассвет - переходный период
             timeFactor = 1.02;
         } else if (h >= 18 && h < 20) {
-            // Закат - переходный период
             timeFactor = 1.02;
         } else {
-            // Ночь - базовый уровень
             timeFactor = 1.0;
         }
 
@@ -183,7 +261,6 @@ MapQuickItem {
         if (!mapReference) return 0;
         var h = mapReference.currentTime || 6.0;
 
-        // Вариация в зависимости от времени суток
         if (h >= 7 && h < 9) {
             return 3; // Утро - повышенный уровень
         } else if (h >= 17 && h < 20) {
@@ -198,11 +275,9 @@ MapQuickItem {
     function updateCityNoiseCircle(noiseLevel) {
         if (!mapReference || !mapReference.noiseCircles) return;
 
-        // Находим кружок города и обновляем его уровень шума
         for (var i = 0; i < mapReference.noiseCircles.length; i++) {
             var circle = mapReference.noiseCircles[i];
             if (circle) {
-                // Проверяем по ID города или названию
                 var isCurrentCity = false;
 
                 if (cityId && circle.circleId === cityId) {
@@ -214,10 +289,7 @@ MapQuickItem {
                 }
 
                 if (isCurrentCity) {
-                    // Обновляем уровень шума
                     circle.noiseLevel = noiseLevel;
-
-                    // Обновляем цвет в зависимости от уровня шума
                     updateCircleColor(circle, noiseLevel);
                     break;
                 }
@@ -246,7 +318,6 @@ MapQuickItem {
             circle.color = "#FF00AAFF"; // Синий
         }
 
-        // Анимация изменения цвета
         circle.opacity = 0.8;
     }
 
@@ -255,9 +326,6 @@ MapQuickItem {
     }
 
     function clearMeasurements() {
-        for (var i = 0; i < measurements.length; i++) {
-            measurements[i].destroy();
-        }
         measurements = [];
     }
 
@@ -269,20 +337,80 @@ MapQuickItem {
             cityFullTitle = cityData.title || "";
             baseNoiseLevel = cityData.baseNoiseLevel || -58;
 
-            // Обновляем название спутника
             if (cityName && cityName !== "") {
                 satelliteName = cityName + " Монитор";
             }
+
+            updateSatelliteColor(baseNoiseLevel);
         }
     }
 
     function extractCityNameFromTitle(title) {
-        // Разделяем название на части до " - "
         var parts = title.split(" - ");
         if (parts.length > 0) {
             return parts[0].trim();
         }
         return title;
+    }
+
+    function updateSatelliteColor(noiseLevel) {
+        if (noiseLevel > -60) {
+            satelliteColor = "#FF0000"; // Очень высокий - красный
+        } else if (noiseLevel > -70) {
+            satelliteColor = "#FF4400"; // Высокий - оранжево-красный
+        } else if (noiseLevel > -75) {
+            satelliteColor = "#FF8800"; // Повышенный - оранжевый
+        } else if (noiseLevel > -80) {
+            satelliteColor = "#FFCC00"; // Средний - желто-оранжевый
+        } else if (noiseLevel > -85) {
+            satelliteColor = "#FFFF00"; // Низкий - желтый
+        } else if (noiseLevel > -90) {
+            satelliteColor = "#AAFF00"; // Очень низкий - желто-зеленый
+        } else if (noiseLevel > -95) {
+            satelliteColor = "#00FF00"; // Минимальный - зеленый
+        } else {
+            satelliteColor = "#00AAFF"; // Фоновый - синий
+        }
+    }
+
+    Component.onCompleted: {
+        // Пытаемся получить DataStorage из различных источников
+        var storage = null;
+
+        // 1. Из mapReference
+        if (mapReference) {
+            if (typeof mapReference.getDataStorage === 'function') {
+                storage = mapReference.getDataStorage();
+                console.log("✅ Получили DataStorage через getDataStorage() для", satelliteName);
+            } else if (mapReference.dataStorage) {
+                storage = mapReference.dataStorage;
+                console.log("✅ Получили DataStorage через mapReference.dataStorage для", satelliteName);
+            }
+        }
+
+        // 2. Из глобального контекста
+        if (!storage && typeof dataStorageManager !== 'undefined') {
+            storage = dataStorageManager;
+            console.log("✅ Получили DataStorage из глобального контекста для", satelliteName);
+        }
+
+        // 3. Попробуем напрямую из корневого объекта
+        if (!storage && mapReference && typeof mapReference.dataStorage !== 'undefined') {
+            storage = mapReference.dataStorage;
+            console.log("✅ Получили DataStorage напрямую для", satelliteName);
+        }
+
+        if (storage) {
+            dataStorage = storage;
+            console.log("✅ StaticSatellite инициализирован с DataStorage для", satelliteName);
+        } else {
+            console.log("⚠️ StaticSatellite не может получить доступ к DataStorage для", satelliteName);
+            console.log("   Доступные источники:");
+            console.log("   - mapReference:", mapReference ? "есть" : "нет");
+            console.log("   - dataStorageManager:", typeof dataStorageManager !== 'undefined' ? "есть" : "нет");
+        }
+
+        updateSatelliteColor(baseNoiseLevel);
     }
 
     Component.onDestruction: {

@@ -15,11 +15,14 @@
 #include <QDialog>
 #include <QDateTime>
 #include <QTimer>
+#include <QFileDialog>
 
 #include <QQuickWidget>
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QDateTime>
+
+#include "QmlBridge.h"
 
 class SolarSystemDialog : public QDialog
 {
@@ -42,6 +45,8 @@ private:
     QDateTime currentDateTime;
 };
 
+class DataStorage;
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -53,6 +58,9 @@ public:
 public slots:
     void syncSolarSystemTime(double hour, double days);
 
+private:
+    QmlBridge* qmlBridge;
+
 private slots:
     void onFlyToClicked();
     void onAddMarkerClicked();
@@ -63,6 +71,9 @@ private slots:
     void onDateTimeChanged(const QDateTime &dateTime);
     void syncTimeWithSolarSystem();
     void onMapLoaded();
+    void onExportDataClicked();
+    void showDataStatistics();
+    void onSatelliteDataAdded(const QString &satelliteName, int count);
 
 private:
     void setupUI();
@@ -76,6 +87,7 @@ private:
 
     QQuickWidget *mapWidget;
     SolarSystemDialog *solarSystemDialog;
+    DataStorage *dataStorage;
 
     // Элементы управления
     QLineEdit *latEdit;

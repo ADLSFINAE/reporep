@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "data_storage.h"
 #include <QApplication>
 #include <QRandomGenerator>
 #include <QVBoxLayout>
@@ -11,6 +12,8 @@
 #include <QStatusBar>
 #include <QMessageBox>
 #include <QMetaObject>
+#include <QFileDialog>
+#include <QDebug>
 
 // Реализация SolarSystemDialog
 SolarSystemDialog::SolarSystemDialog(QWidget *parent)
@@ -83,13 +86,19 @@ double SolarSystemDialog::getPlanetaryInfluence() const
 // Основной конструктор MainWindow
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
+
+    , qmlBridge(new QmlBridge(this)) // Инициализируем мост
     , mapWidget(new QQuickWidget(this))
     , solarSystemDialog(new SolarSystemDialog(this))
+    , dataStorage(new DataStorage(this))
     , solarInfluence(1.0)
     , lunarInfluence(1.0)
     , planetaryInfluence(1.0)
     , markerCounter(0)
 {
+    // Передаем DataStorage в мост
+    qmlBridge->setDataStorage(dataStorage);
+
     setupUI();
     setupMap();
 
@@ -103,6 +112,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(solarSystemDialog, &SolarSystemDialog::dateTimeChanged,
             this, &MainWindow::onDateTimeChanged);
 
+    // Подключаем сигнал от DataStorage
+    connect(dataStorage, &DataStorage::dataAdded,
+            this, &MainWindow::onSatelliteDataAdded);
+
     // Таймер для постоянной синхронизации времени с solar system
     QTimer *syncTimer = new QTimer(this);
     connect(syncTimer, &QTimer::timeout, this, &MainWindow::syncTimeWithSolarSystem);
@@ -111,6 +124,7 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    delete dataStorage;
 }
 
 void MainWindow::setupUI()
@@ -148,6 +162,8 @@ void MainWindow::setupUI()
     QPushButton *zoomInButton = new QPushButton("+", this);
     QPushButton *zoomOutButton = new QPushButton("-", this);
     QPushButton *solarSystemButton = new QPushButton("Солнечная система", this);
+    QPushButton *exportDataButton = new QPushButton("Экспорт данных", this);
+    QPushButton *statsButton = new QPushButton("Статистика", this);
 
     zoomInButton->setMaximumWidth(40);
     zoomOutButton->setMaximumWidth(40);
@@ -155,6 +171,8 @@ void MainWindow::setupUI()
     flyToButton->setMaximumWidth(100);
     addMarkerButton->setMaximumWidth(140);
     clearMarkersButton->setMaximumWidth(140);
+    exportDataButton->setMaximumWidth(120);
+    statsButton->setMaximumWidth(100);
 
     // Слайдер масштаба
     zoomSlider = new QSlider(Qt::Horizontal, this);
@@ -194,6 +212,8 @@ void MainWindow::setupUI()
     controlLayout->addWidget(zoomInButton);
     controlLayout->addWidget(zoomOutButton);
     controlLayout->addWidget(solarSystemButton);
+    controlLayout->addWidget(exportDataButton);
+    controlLayout->addWidget(statsButton);
 
     controlLayout->addWidget(zoomSlider);
     controlLayout->addWidget(radiusLabel);
@@ -230,6 +250,8 @@ void MainWindow::setupUI()
     });
 
     connect(solarSystemButton, &QPushButton::clicked, this, &MainWindow::onSolarSystemClicked);
+    connect(exportDataButton, &QPushButton::clicked, this, &MainWindow::onExportDataClicked);
+    connect(statsButton, &QPushButton::clicked, this, &MainWindow::showDataStatistics);
 
     connect(zoomSlider, &QSlider::valueChanged, this, &MainWindow::onZoomSliderChanged);
     connect(radiusSlider, &QSlider::valueChanged, this, &MainWindow::onAnalysisRadiusChanged);
@@ -240,17 +262,79 @@ void MainWindow::setupUI()
 
 void MainWindow::setupMap()
 {
-    // Настройка QQuickWidget для отображения карты
-    mapWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
-    mapWidget->setSource(QUrl("qrc:/Map/map.qml"));
+    qDebug() << "=== НАСТРОЙКА КАРТЫ ===";
+    qDebug() << "1. DataStorage создан:" << (dataStorage != nullptr);
+    qDebug() << "2. QmlBridge создан:" << (qmlBridge != nullptr);
 
-    // Установка контекста для доступа к свойствам
-    mapWidget->rootContext()->setContextProperty("mainWindow", this);
+    if (dataStorage) {
+        dataStorage->testConnection();
+        qDebug() << "3. DataStorage протестирован";
+    }
+
+    if (qmlBridge) {
+        qDebug() << "4. QmlBridge статус:" << qmlBridge->getStorageStatus();
+    }
+
+    // Настройка QQuickWidget
+    mapWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
+
+    // Устанавливаем контекстные свойства
+    QQmlContext* context = mapWidget->rootContext();
+
+    // ОСНОВНОЙ СПОСОБ: передаем через QmlBridge
+    context->setContextProperty("qmlBridge", qmlBridge);
+
+    // АЛЬТЕРНАТИВНЫЕ СПОСОБЫ (для обратной совместимости):
+    context->setContextProperty("dataStorage", dataStorage);
+    context->setContextProperty("dataStorageManager", dataStorage);
+    context->setContextProperty("mainWindow", this);
+
+    qDebug() << "5. Контекстные свойства установлены";
+    qDebug() << "   - qmlBridge:" << (qmlBridge ? "✅" : "❌");
+    qDebug() << "   - dataStorage:" << (dataStorage ? "✅" : "❌");
+
+    // Загружаем QML
+    mapWidget->setSource(QUrl("qrc:/Map/map.qml"));
 
     // Подключение сигналов загрузки карты
     connect(mapWidget, &QQuickWidget::statusChanged, [this](QQuickWidget::Status status) {
         if (status == QQuickWidget::Ready) {
+            qDebug() << "=== КАРТА QML ЗАГРУЖЕНА ===";
+
+            if (mapWidget->rootObject()) {
+                // НЕПОСРЕДСТВЕННАЯ передача объектов в корневой объект
+                mapWidget->rootObject()->setProperty("dataStorage", QVariant::fromValue(dataStorage));
+                mapWidget->rootObject()->setProperty("qmlBridge", QVariant::fromValue(qmlBridge));
+
+                qDebug() << "6. Объекты установлены в корневой объект QML";
+                qDebug() << "   - dataStorage установлен:" << mapWidget->rootObject()->property("dataStorage").isValid();
+                qDebug() << "   - qmlBridge установлен:" << mapWidget->rootObject()->property("qmlBridge").isValid();
+
+                // Тестируем доступность методов
+                QTimer::singleShot(100, this, [this]() {
+                    qDebug() << "7. Тестирование доступности объектов в QML...";
+                    QMetaObject::invokeMethod(mapWidget->rootObject(), "testDataStorageAccess");
+                });
+            }
+
             onMapLoaded();
+
+        } else if (status == QQuickWidget::Error) {
+            qDebug() << "❌ ОШИБКА ЗАГРУЗКИ QML:";
+            foreach (const QQmlError &error, mapWidget->errors()) {
+                qDebug() << error.toString();
+            }
+        }
+    });
+
+    // Дополнительная проверка через секунду
+    QTimer::singleShot(1000, this, [this]() {
+        qDebug() << "=== ПРОВЕРКА ЧЕРЕЗ 1 СЕКУНДУ ===";
+        qDebug() << "DataStorage:" << (dataStorage ? "✅" : "❌");
+        qDebug() << "QmlBridge:" << (qmlBridge ? "✅" : "❌");
+
+        if (dataStorage) {
+            dataStorage->testConnection();
         }
     });
 }
@@ -440,6 +524,58 @@ void MainWindow::onMapTypeChanged(int index)
     invokeQMLMethod("setMapType", mapType);
 }
 
+void MainWindow::onExportDataClicked()
+{
+    QString filename = QFileDialog::getSaveFileName(
+        this,
+        "Экспорт данных спутников",
+        QDir::homePath() + "/satellite_measurements_" +
+        QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss") + ".csv",
+        "CSV Files (*.csv)"
+    );
+
+    if (!filename.isEmpty()) {
+        if (dataStorage->exportToCSV(filename)) {
+            QMessageBox::information(this, "Успех",
+                QString("Данные успешно экспортированы в файл:\n%1").arg(filename));
+        } else {
+            QMessageBox::warning(this, "Ошибка", "Не удалось экспортировать данные");
+        }
+    }
+}
+
+void MainWindow::showDataStatistics()
+{
+    QVariantMap stats = dataStorage->getStatistics();
+
+    QString message = QString(
+        "Статистика измерений:\n\n"
+        "Всего измерений: %1\n"
+        "Уникальных спутников: %2\n"
+        "Уникальных городов: %3\n"
+        "Минимальное излучение: %4 дБм\n"
+        "Максимальное излучение: %5 дБм\n"
+        "Среднее излучение: %6 дБм\n"
+        "Последнее обновление: %7"
+    ).arg(stats["totalMeasurements"].toInt())
+     .arg(stats["uniqueSatellites"].toInt())
+     .arg(stats["uniqueCities"].toInt())
+     .arg(stats["minRadiation"].toDouble(), 0, 'f', 1)
+     .arg(stats["maxRadiation"].toDouble(), 0, 'f', 1)
+     .arg(stats["avgRadiation"].toDouble(), 0, 'f', 1)
+     .arg(stats["lastUpdate"].toString());
+
+    QMessageBox::information(this, "Статистика данных", message);
+}
+
+void MainWindow::onSatelliteDataAdded(const QString &satelliteName, int count)
+{
+    statusBar()->showMessage(
+        QString("Добавлено измерение от %1 (всего: %2)").arg(satelliteName).arg(count),
+        3000
+    );
+}
+
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
     if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) {
@@ -481,4 +617,3 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 
     return QMainWindow::eventFilter(obj, event);
 }
-
