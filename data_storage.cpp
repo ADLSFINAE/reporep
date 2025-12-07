@@ -4,13 +4,37 @@
 #include <QDebug>
 #include <QFileDialog>
 #include <QDir>
+#include <QRandomGenerator>
 
 DataStorage::DataStorage(QObject *parent) : QObject(parent) {
     qDebug() << "DataStorage инициализирован";
+
+    // Добавляем тестовые данные при создании
+    addTestData();
 }
 
 DataStorage::~DataStorage() {
     clearAllData();
+}
+
+// Добавление нового спутника
+void DataStorage::addSatellite(const QString &satelliteName) {
+    if (satelliteName.isEmpty()) {
+        qDebug() << "Попытка добавить спутник с пустым именем";
+        return;
+    }
+
+    if (!measurementsMap.contains(satelliteName)) {
+        measurementsMap[satelliteName] = QVector<SatelliteMeasurementData>();
+        qDebug() << "Добавлен новый спутник:" << satelliteName;
+        emit satelliteAdded(satelliteName);
+
+        // Обновляем статистику
+        QVariantMap stats = getStatistics();
+        emit statisticsUpdated(stats);
+    } else {
+        qDebug() << "Спутник" << satelliteName << "уже существует";
+    }
 }
 
 void DataStorage::addMeasurement(const QString &satelliteName,
@@ -23,7 +47,11 @@ void DataStorage::addMeasurement(const QString &satelliteName,
                                 double distanceToCity,
                                 double influenceFactor) {
 
-    qDebug()<<"DDDDDDDDDDDDDDDDDDDDD";
+    // Создаем спутник, если его нет
+    if (!measurementsMap.contains(satelliteName)) {
+        addSatellite(satelliteName);
+    }
+
     SatelliteMeasurementData data;
     data.measurementTime = QDateTime::fromString(dateTime, Qt::ISODate);
     data.coordinate = qMakePair(latitude, longitude);
@@ -40,6 +68,32 @@ void DataStorage::addMeasurement(const QString &satelliteName,
              << "время:" << dateTime
              << "координаты:" << latitude << longitude
              << "значение:" << radiationValue;
+
+    emit dataAdded(satelliteName, measurementsMap[satelliteName].size());
+
+    for(auto& elem :  measurementsMap.keys()){
+        qDebug()<<elem;
+    }
+
+    // Обновляем статистику
+    QVariantMap stats = getStatistics();
+    emit statisticsUpdated(stats);
+}
+
+// Добавление измерения с объектом данных
+void DataStorage::addMeasurementData(const QString &satelliteName,
+                                   const SatelliteMeasurementData &data) {
+    // Создаем спутник, если его нет
+    if (!measurementsMap.contains(satelliteName)) {
+        addSatellite(satelliteName);
+    }
+
+    // Добавляем данные
+    measurementsMap[satelliteName].append(data);
+
+    qDebug() << "Добавлено измерение (объект) для спутника:" << satelliteName
+             << "время:" << data.measurementTime.toString()
+             << "значение:" << data.radiationValue;
 
     emit dataAdded(satelliteName, measurementsMap[satelliteName].size());
 
@@ -131,8 +185,8 @@ QVariantMap DataStorage::getStatistics() {
     QVariantMap stats;
     int totalMeasurements = 0;
     int uniqueSatellites = measurementsMap.size();
-    double minRadiation = 0;
-    double maxRadiation = -200;
+    double minRadiation = 1000;
+    double maxRadiation = -1000;
     double sumRadiation = 0;
     QSet<QString> uniqueCities;
 
@@ -150,6 +204,12 @@ QVariantMap DataStorage::getStatistics() {
                 uniqueCities.insert(data.cityName);
             }
         }
+    }
+
+    // Если нет данных, устанавливаем значения по умолчанию
+    if (totalMeasurements == 0) {
+        minRadiation = 0;
+        maxRadiation = 0;
     }
 
     stats["totalMeasurements"] = totalMeasurements;
@@ -216,7 +276,89 @@ int DataStorage::getMeasurementCount(const QString &satelliteName) {
 }
 
 QStringList DataStorage::getAllSatelliteNames() {
-    return measurementsMap.keys();
+    QStringList names = measurementsMap.keys();
+    qDebug() << "Получение списка спутников. Всего:" << names.size();
+    for (const QString &name : names) {
+        qDebug() << "  -" << name << ":" << getMeasurementCount(name) << "измерений";
+    }
+    return names;
+}
+
+bool DataStorage::satelliteExists(const QString &satelliteName) {
+    return measurementsMap.contains(satelliteName);
+}
+
+QVector<SatelliteMeasurementData> DataStorage::getSatelliteData(const QString &satelliteName) {
+    if (measurementsMap.contains(satelliteName)) {
+        return measurementsMap[satelliteName];
+    }
+    return QVector<SatelliteMeasurementData>();
+}
+
+void DataStorage::addTestData() {
+    qDebug() << "=== ДОБАВЛЕНИЕ ТЕСТОВЫХ ДАННЫХ ===";
+
+    // Создаем тестовые спутники
+    QStringList satelliteNames = {
+        "Спутник-1",
+        "Спутник-2",
+        "Спутник-3",
+        "ГЛОНАСС-M",
+        "GPS-III",
+        "Galileo",
+        "Байду",
+        "Метеор-М"
+    };
+
+    QDateTime startTime = QDateTime::currentDateTime().addDays(-30);
+
+    for (const QString &satelliteName : satelliteNames) {
+        // Добавляем спутник
+        addSatellite(satelliteName);
+
+        // Добавляем тестовые измерения для каждого спутника
+        int measurementsCount = 20 + QRandomGenerator::global()->bounded(30);
+
+        for (int i = 0; i < measurementsCount; i++) {
+            QDateTime measurementTime = startTime.addSecs(i * 3600 * 6); // Каждые 6 часов
+
+            // Генерация случайных координат
+            double latitude = 45.0 + (QRandomGenerator::global()->generateDouble() - 0.5) * 20;
+            double longitude = 40.0 + (QRandomGenerator::global()->generateDouble() - 0.5) * 40;
+
+            // Генерация уровня излучения
+            double radiation = -80 - QRandomGenerator::global()->generateDouble() * 20;
+
+            // Случайный город
+            QStringList cities = {"Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
+                                 "Казань", "Нижний Новгород", "Челябинск", "Омск", "Самара",
+                                 "Открытая местность"};
+            QString city = cities[QRandomGenerator::global()->bounded(cities.size())];
+
+            // Создаем данные измерения
+            SatelliteMeasurementData data(
+                measurementTime,
+                latitude,
+                longitude,
+                radiation,
+                city,
+                500 + QRandomGenerator::global()->bounded(500), // высота 500-1000 км
+                city == "Открытая местность" ? 0 : 1000 + QRandomGenerator::global()->bounded(9000), // расстояние 1-10 км
+                0.8 + QRandomGenerator::global()->generateDouble() * 0.4 // фактор влияния 0.8-1.2
+            );
+
+            // Добавляем измерение
+            addMeasurementData(satelliteName, data);
+        }
+
+        qDebug() << "Добавлен спутник" << satelliteName << "с" << measurementsCount << "измерениями";
+    }
+
+    qDebug() << "=== ТЕСТОВЫЕ ДАННЫЕ ДОБАВЛЕНЫ ===";
+    qDebug() << "Всего спутников:" << measurementsMap.size();
+    qDebug() << "Всего измерений:" << getTotalMeasurementCount();
+
+    emit testDataAdded();
 }
 
 int DataStorage::getTotalMeasurementCount() {

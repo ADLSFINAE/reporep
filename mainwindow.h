@@ -16,6 +16,8 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QFileDialog>
+#include <QApplication>
+#include <QKeyEvent>
 
 #include <QQuickWidget>
 #include <QQmlContext>
@@ -23,6 +25,8 @@
 #include <QDateTime>
 
 #include "QmlBridge.h"
+#include "data_storage.h"
+#include "simplechartwindow.h"  // Изменено на simplechartwindow.h
 
 class SolarSystemDialog : public QDialog
 {
@@ -45,8 +49,6 @@ private:
     QDateTime currentDateTime;
 };
 
-class DataStorage;
-
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -60,6 +62,7 @@ public slots:
 
 private:
     QmlBridge* qmlBridge;
+    SimpleChartWindow *m_chartWindow;  // Изменено на SimpleChartWindow
 
 private slots:
     void onFlyToClicked();
@@ -74,6 +77,7 @@ private slots:
     void onExportDataClicked();
     void showDataStatistics();
     void onSatelliteDataAdded(const QString &satelliteName, int count);
+    void onShowChartsClicked(); // Новый слот для открытия графиков
 
 private:
     void setupUI();
@@ -106,3 +110,5 @@ private:
 };
 
 #endif // MAINWINDOW_H
+
+

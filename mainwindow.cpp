@@ -1,18 +1,9 @@
 #include "mainwindow.h"
 #include "data_storage.h"
-#include <QApplication>
+#include "simplechartwindow.h"  // Изменено
+
 #include <QRandomGenerator>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QPushButton>
-#include <QLineEdit>
-#include <QLabel>
-#include <QSlider>
-#include <QComboBox>
-#include <QStatusBar>
-#include <QMessageBox>
 #include <QMetaObject>
-#include <QFileDialog>
 #include <QDebug>
 
 // Реализация SolarSystemDialog
@@ -86,8 +77,8 @@ double SolarSystemDialog::getPlanetaryInfluence() const
 // Основной конструктор MainWindow
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
-
-    , qmlBridge(new QmlBridge(this)) // Инициализируем мост
+    , qmlBridge(new QmlBridge(this))
+    , m_chartWindow(nullptr)
     , mapWidget(new QQuickWidget(this))
     , solarSystemDialog(new SolarSystemDialog(this))
     , dataStorage(new DataStorage(this))
@@ -125,6 +116,9 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     delete dataStorage;
+    if (m_chartWindow) {
+        delete m_chartWindow;
+    }
 }
 
 void MainWindow::setupUI()
@@ -164,7 +158,9 @@ void MainWindow::setupUI()
     QPushButton *solarSystemButton = new QPushButton("Солнечная система", this);
     QPushButton *exportDataButton = new QPushButton("Экспорт данных", this);
     QPushButton *statsButton = new QPushButton("Статистика", this);
+    QPushButton *chartsButton = new QPushButton("Графики и аналитика", this);
 
+    // Настройка размеров кнопок
     zoomInButton->setMaximumWidth(40);
     zoomOutButton->setMaximumWidth(40);
     solarSystemButton->setMaximumWidth(160);
@@ -173,6 +169,7 @@ void MainWindow::setupUI()
     clearMarkersButton->setMaximumWidth(140);
     exportDataButton->setMaximumWidth(120);
     statsButton->setMaximumWidth(100);
+    chartsButton->setMaximumWidth(150);
 
     // Слайдер масштаба
     zoomSlider = new QSlider(Qt::Horizontal, this);
@@ -214,6 +211,7 @@ void MainWindow::setupUI()
     controlLayout->addWidget(solarSystemButton);
     controlLayout->addWidget(exportDataButton);
     controlLayout->addWidget(statsButton);
+    controlLayout->addWidget(chartsButton);
 
     controlLayout->addWidget(zoomSlider);
     controlLayout->addWidget(radiusLabel);
@@ -252,6 +250,7 @@ void MainWindow::setupUI()
     connect(solarSystemButton, &QPushButton::clicked, this, &MainWindow::onSolarSystemClicked);
     connect(exportDataButton, &QPushButton::clicked, this, &MainWindow::onExportDataClicked);
     connect(statsButton, &QPushButton::clicked, this, &MainWindow::showDataStatistics);
+    connect(chartsButton, &QPushButton::clicked, this, &MainWindow::onShowChartsClicked);
 
     connect(zoomSlider, &QSlider::valueChanged, this, &MainWindow::onZoomSliderChanged);
     connect(radiusSlider, &QSlider::valueChanged, this, &MainWindow::onAnalysisRadiusChanged);
@@ -435,6 +434,18 @@ void MainWindow::onSolarSystemClicked()
     statusBar()->showMessage("Открыто окно солнечной системы");
 }
 
+void MainWindow::onShowChartsClicked()
+{
+    if (!m_chartWindow) {
+        m_chartWindow = new SimpleChartWindow(dataStorage, this);
+    }
+
+    m_chartWindow->show();
+    m_chartWindow->raise();
+    m_chartWindow->activateWindow();
+    statusBar()->showMessage("Открыто окно графиков и аналитики");
+}
+
 void MainWindow::onDateTimeChanged(const QDateTime &dateTime)
 {
     Q_UNUSED(dateTime);
@@ -574,6 +585,7 @@ void MainWindow::onSatelliteDataAdded(const QString &satelliteName, int count)
         QString("Добавлено измерение от %1 (всего: %2)").arg(satelliteName).arg(count),
         3000
     );
+    m_chartWindow;
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)

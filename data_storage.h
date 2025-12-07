@@ -23,6 +23,22 @@ struct SatelliteMeasurementData {
 
     SatelliteMeasurementData()
         : radiationValue(0), altitude(0), distanceToCity(0), influenceFactor(1.0) {}
+
+    SatelliteMeasurementData(const QDateTime &time,
+                           double lat,
+                           double lng,
+                           double radiation,
+                           const QString &city = "",
+                           double alt = 0,
+                           double dist = 0,
+                           double influence = 1.0)
+        : measurementTime(time)
+        , coordinate(qMakePair(lat, lng))
+        , radiationValue(radiation)
+        , cityName(city)
+        , altitude(alt)
+        , distanceToCity(dist)
+        , influenceFactor(influence) {}
 };
 
 class DataStorage : public QObject {
@@ -31,6 +47,9 @@ class DataStorage : public QObject {
 public:
     explicit DataStorage(QObject *parent = nullptr);
     ~DataStorage();
+
+    // Добавление спутника
+    Q_INVOKABLE void addSatellite(const QString &satelliteName);
 
     // Добавление данных измерения
     Q_INVOKABLE void addMeasurement(const QString &satelliteName,
@@ -42,6 +61,10 @@ public:
                                    double altitude = 0,
                                    double distanceToCity = 0,
                                    double influenceFactor = 1.0);
+
+    // Добавление измерения с объектом данных
+    Q_INVOKABLE void addMeasurementData(const QString &satelliteName,
+                                       const SatelliteMeasurementData &data);
 
     // Получение всех измерений по спутнику
     Q_INVOKABLE QVariantList getMeasurementsBySatellite(const QString &satelliteName);
@@ -67,18 +90,29 @@ public:
     // Получение списка всех спутников
     Q_INVOKABLE QStringList getAllSatelliteNames();
 
-    // В публичную секцию класса DataStorage добавьте:
-    public:
-        Q_INVOKABLE void testConnection() {
-            qDebug() << "✅ DataStorage тест соединения: Работает! Доступно записей:" << measurementsMap.size();
-        }
+    // Проверка существования спутника
+    Q_INVOKABLE bool satelliteExists(const QString &satelliteName);
 
-        Q_INVOKABLE int getTotalMeasurementCount();
+    // Получение данных спутника в удобном формате
+    Q_INVOKABLE QVector<SatelliteMeasurementData> getSatelliteData(const QString &satelliteName);
+
+    // Добавление тестовых данных
+    Q_INVOKABLE void addTestData();
+
+    // В публичную секцию класса DataStorage добавьте:
+public:
+    Q_INVOKABLE void testConnection() {
+        qDebug() << "✅ DataStorage тест соединения: Работает! Доступно записей:" << measurementsMap.size();
+    }
+
+    Q_INVOKABLE int getTotalMeasurementCount();
 
 signals:
+    void satelliteAdded(const QString &satelliteName);
     void dataAdded(const QString &satelliteName, int totalCount);
     void dataCleared();
     void statisticsUpdated(const QVariantMap &stats);
+    void testDataAdded();
 
 private:
     QMap<QString, QVector<SatelliteMeasurementData>> measurementsMap;

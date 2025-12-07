@@ -12,12 +12,14 @@ SOURCES += \
     QmlBridge.cpp \
     data_storage.cpp \
     main.cpp \
-    mainwindow.cpp
+    mainwindow.cpp \
+    simplechartwindow.cpp
 
 HEADERS += \
     QmlBridge.h \
     data_storage.h \
-    mainwindow.h
+    mainwindow.h \
+    simplechartwindow.h
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
